@@ -16,3 +16,24 @@ export {
   type TenantContext
 } from "./persona-contract.ts";
 export { MorrowError, isMorrowError, type ErrorCode } from "./errors.ts";
+export {
+  InMemoryMemoryEngine,
+  RandomMemoryIds,
+  RealtimeMemoryClock,
+  type ConsentReceipt,
+  type DataClassification,
+  type DeletionMode,
+  type MemoryAuditEvent,
+  type MemoryClock,
+  type MemoryIdGenerator,
+  type MemoryRecord,
+  type MemorySource,
+  type MemoryStatus,
+  type MemoryTenantContext,
+  type MemoryType,
+  type QueryMemoryInput,
+  type RegisterConsentInput,
+  type RegisterMemoryInput,
+  type RetentionRule,
+  type RevokeMemoryInput
+} from "./memory-engine.ts";

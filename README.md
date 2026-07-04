@@ -1,24 +1,32 @@
 # MORROW
 
-MORROW is an early-stage foundation for explicit, versioned, tenant-safe AI
-state. This repository currently includes a small deterministic contract
-compilation slice: create a versioned Persona Contract, publish it immutably, and
-compile it into a reproducible `CompiledBundle`.
+MORROW is an early-stage Consent-Aware Memory Engine for AI applications. It
+stores and retrieves typed memories only when tenant, subject, purpose, policy,
+consent, and retention constraints permit it.
+
+The repository is built as a commercial-friendly OSS foundation: explicit
+contracts, fail-closed behavior, tenant boundaries, append-only audit evidence,
+and adapter-ready architecture come before UI or provider integrations.
 
 ## Status
 
-This is an MVP bootstrap. The current implementation is intentionally small and
-dependency-light:
+This is a v0.1 bootstrap MVP. It includes:
 
-- TypeScript source executed by Node.js type stripping
-- deterministic canonical JSON hashing
-- immutable published versions
-- tenant checks before compilation
-- fail-closed plugin reference validation
-- append-only in-memory audit evidence
-- private-boundary guard for public repository hygiene
+- typed memory registration for `episodic`, `fact`, `preference`,
+  `relationship`, and `instruction`
+- consent receipt registration and enforcement before persistence/retrieval
+- retention rules and expiry filtering
+- tenant, subject, purpose, and policy-scoped retrieval
+- idempotent memory writes and revocations
+- append-only audit events with actor, reason, and correlation ID
+- deterministic contract compilation utilities retained as a small companion
+  module
+- OpenAPI 3.1 draft, JSON Schema, PostgreSQL migration, Docker Compose, CI, and
+  repository private-boundary guard
 
-Persistent storage and HTTP/OpenAPI contracts are the next implementation step.
+Persistent PostgreSQL adapters and HTTP transport are the next implementation
+slice; the current executable engine uses an in-memory adapter for deterministic
+tests and local demos.
 
 ## Quick Start
 
@@ -28,37 +36,48 @@ pnpm run verify
 pnpm run demo
 ```
 
-The demo prints a compiled content hash and audit event count for a synthetic
-contract.
+`pnpm run demo` registers retention, consent, and one synthetic memory, then
+queries it under the same tenant and purpose.
 
-## Public API Surface
+For the PostgreSQL schema preview:
 
-The package exports:
+```bash
+docker compose up
+```
 
-- `InMemoryPersonaStore`
-- `PersonaCompiler`
-- `validatePersonaContract`
-- `MorrowError`
-- public TypeScript types for contracts, versions, bundles, audit events, and
-  tenant context
+The compose file initializes PostgreSQL with the migration under `migrations/`.
 
-## Safety Notes
+## Public API Direction
 
-- Published versions are immutable.
-- Tenant mismatch fails before bundle compilation.
-- Unknown plugin references fail closed.
-- The compiler uses canonical JSON and SHA-256 so the same published contract and
-  compiler version produce the same content hash.
-- This repository intentionally excludes local operator material, private
-  planning documents, private fixtures, and raw conversation data from public
-  artifacts.
+The draft OpenAPI contract lives in `openapi/openapi.yaml` and currently covers:
+
+- `POST /v1/consent-receipts`
+- `POST /v1/memories`
+- `POST /v1/memories/query`
+- `POST /v1/memories/{memoryId}/revoke`
+
+The package exports the in-memory engine, domain types, typed errors, and the
+deterministic contract compiler utilities from `src/index.ts`.
+
+## Safety Properties
+
+- Missing consent fails closed before memory persistence.
+- Wrong-tenant retrieval returns no cross-tenant data.
+- Wrong-tenant mutation is denied.
+- Expired retention removes memories from retrieval and export.
+- Repeated idempotency keys do not duplicate side effects.
+- Revocation clears retrievable content and records audit evidence.
+- Private operator material and private requirement documents are blocked by
+  `.gitignore`, `.dockerignore`, `.npmignore`, and `scripts/check-private-boundary.mjs`.
 
 ## Limitations
 
-- Storage is currently in-memory for the bootstrap slice.
-- There is no HTTP transport yet.
-- TypeScript is executed with Node.js type stripping in this offline-friendly MVP;
-  full `tsc --noEmit` strict checking will be added with the dependency toolchain.
+- HTTP transport is not implemented yet.
+- PostgreSQL schema is present, but the runtime storage adapter is still
+  in-memory.
+- TypeScript is executed with Node.js type stripping in this offline-friendly
+  MVP; full `tsc --noEmit` strict checking will be restored when the dependency
+  toolchain is available.
 
 ## License
 

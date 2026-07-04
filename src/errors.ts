@@ -3,7 +3,9 @@ export type ErrorCode =
   | "VALIDATION_FAILED"
   | "VERSION_CONFLICT"
   | "RESOURCE_NOT_FOUND"
-  | "PLUGIN_INCOMPATIBLE";
+  | "PLUGIN_INCOMPATIBLE"
+  | "CONSENT_REQUIRED"
+  | "CONFIGURATION_INVALID";
 
 export class MorrowError extends Error {
   readonly code: ErrorCode;

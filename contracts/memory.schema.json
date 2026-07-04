@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tuzuminami.github.io/morrow/schemas/memory.schema.json",
+  "title": "MORROW Memory",
+  "type": "object",
+  "required": [
+    "subjectId",
+    "type",
+    "purpose",
+    "policyRef",
+    "content",
+    "source",
+    "confidence",
+    "classification",
+    "idempotencyKey"
+  ],
+  "properties": {
+    "subjectId": { "type": "string", "minLength": 1 },
+    "type": {
+      "type": "string",
+      "enum": ["episodic", "fact", "preference", "relationship", "instruction"]
+    },
+    "purpose": { "type": "string", "minLength": 1 },
+    "policyRef": { "type": "string", "minLength": 1 },
+    "content": { "type": "string", "minLength": 1 },
+    "source": {
+      "type": "object",
+      "required": ["kind", "reference"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["user_statement", "system_observation", "operator_import"]
+        },
+        "reference": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "classification": {
+      "type": "string",
+      "enum": ["public", "internal", "sensitive"]
+    },
+    "idempotencyKey": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": false
+}

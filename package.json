@@ -5,7 +5,10 @@
   "type": "module",
   "license": "Apache-2.0",
   "files": [
+    "contracts",
     "dist",
+    "migrations",
+    "openapi",
     "README.md",
     "LICENSE.md"
   ],

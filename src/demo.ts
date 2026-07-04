@@ -1,42 +1,53 @@
-import {
-  InMemoryPersonaStore,
-  PersonaCompiler,
-  SystemClock,
-  UuidGenerator,
-  type PersonaContract,
-  type TenantContext
-} from "./index.ts";
+import { InMemoryMemoryEngine, RandomMemoryIds, RealtimeMemoryClock, type MemoryTenantContext } from "./index.ts";
 
-const context: TenantContext = {
+const context: MemoryTenantContext = {
   tenantId: "demo_tenant",
   actorId: "demo_actor",
+  scopes: ["consent:write", "retention:write", "memory:write", "memory:read", "memory:export"],
   correlationId: "corr_demo"
 };
 
-const contract: PersonaContract = {
-  schemaVersion: "persona-contract/v1",
-  name: "MORROW Guide",
-  role: "deterministic-contract-demo",
-  traits: ["explicit", "versioned", "auditable"],
-  instructions: ["Compile the same input to the same content hash."],
-  pluginRefs: ["core-renderer"],
-  policyRefs: ["default-policy"]
-};
+const engine = new InMemoryMemoryEngine(new RealtimeMemoryClock(), new RandomMemoryIds());
 
-const store = new InMemoryPersonaStore(new SystemClock(), new UuidGenerator());
-const compiler = new PersonaCompiler(new Set(["core-renderer"]));
-const draft = store.createDraft(context, contract.name);
-const version = store.createVersion(context, draft.id, contract);
-const published = store.publishVersion(context, version.id);
-const compiled = compiler.compile(context, published, new Date("2026-07-05T00:00:00.000Z"));
+engine.upsertRetentionRule(context, {
+  memoryType: "preference",
+  purpose: "assistant_personalization",
+  ttlDays: 30,
+  deletionMode: "soft_delete"
+});
+
+engine.registerConsent(context, {
+  subjectId: "subject_demo",
+  purpose: "assistant_personalization",
+  scope: ["preference"],
+  expiresAt: "2099-01-01T00:00:00.000Z"
+});
+
+const memory = engine.registerMemory(context, {
+  subjectId: "subject_demo",
+  type: "preference",
+  purpose: "assistant_personalization",
+  policyRef: "default-policy",
+  content: "Prefers concise implementation notes.",
+  source: { kind: "user_statement", reference: "demo-message-1" },
+  confidence: 0.9,
+  classification: "sensitive",
+  idempotencyKey: "demo-idempotency-key"
+});
+
+const results = engine.queryMemories(context, {
+  subjectId: "subject_demo",
+  purpose: "assistant_personalization",
+  policyRef: "default-policy"
+});
 
 console.log(
   JSON.stringify(
     {
-      personaId: draft.id,
-      version: published.version,
-      contentHash: compiled.contentHash,
-      auditEvents: store.auditEvents().length
+      storedMemoryId: memory.id,
+      returnedCount: results.length,
+      contentHash: memory.contentHash,
+      auditEvents: engine.auditEvents().length
     },
     null,
     2

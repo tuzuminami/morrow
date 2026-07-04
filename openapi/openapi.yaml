@@ -1,0 +1,225 @@
+openapi: 3.1.0
+info:
+  title: MORROW API
+  version: 0.1.0
+  license:
+    name: Apache-2.0
+paths:
+  /v1/consent-receipts:
+    post:
+      summary: Register consent for a subject and purpose.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterConsentRequest"
+      responses:
+        "200":
+          description: Consent receipt registered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+        "403":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+  /v1/memories:
+    post:
+      summary: Store a typed memory when consent and retention permit it.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterMemoryRequest"
+      responses:
+        "200":
+          description: Memory stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+  /v1/memories/query:
+    post:
+      summary: Query active memories by tenant, subject, purpose, and policy reference.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QueryMemoryRequest"
+      responses:
+        "200":
+          description: Active scoped memories.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+        "403":
+          $ref: "#/components/responses/Error"
+  /v1/memories/{memoryId}/revoke:
+    post:
+      summary: Revoke a memory and remove retrievable content.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - name: memoryId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Memory revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+        "403":
+          $ref: "#/components/responses/Error"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    TenantId:
+      name: X-Tenant-Id
+      in: header
+      required: true
+      schema:
+        type: string
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      schema:
+        type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+  responses:
+    Error:
+      description: Stable error envelope.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+  schemas:
+    RegisterConsentRequest:
+      type: object
+      required: [subjectId, purpose, scope, expiresAt]
+      properties:
+        subjectId:
+          type: string
+        purpose:
+          type: string
+        scope:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemoryType"
+        expiresAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    RegisterMemoryRequest:
+      type: object
+      required: [subjectId, type, purpose, policyRef, content, source, confidence, classification]
+      properties:
+        subjectId:
+          type: string
+        type:
+          $ref: "#/components/schemas/MemoryType"
+        purpose:
+          type: string
+        policyRef:
+          type: string
+        content:
+          type: string
+        source:
+          type: object
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        classification:
+          type: string
+          enum: [public, internal, sensitive]
+      additionalProperties: false
+    QueryMemoryRequest:
+      type: object
+      required: [subjectId, purpose, policyRef]
+      properties:
+        subjectId:
+          type: string
+        purpose:
+          type: string
+        policyRef:
+          type: string
+      additionalProperties: false
+    MemoryType:
+      type: string
+      enum: [episodic, fact, preference, relationship, instruction]
+    Envelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+        meta:
+          type: object
+          required: [requestId, correlationId, apiVersion]
+          properties:
+            requestId:
+              type: string
+            correlationId:
+              type: string
+            apiVersion:
+              type: string
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, details, correlationId]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: array
+              items: {}
+            correlationId:
+              type: string
