@@ -1,0 +1,20 @@
+{
+  "name": "@tuzuminami/morrow",
+  "version": "0.1.0",
+  "description": "Consent-aware memory and deterministic contract compilation foundations.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE.md"
+  ],
+  "scripts": {
+    "build": "node --experimental-strip-types scripts/build.mjs",
+    "check:private-boundary": "node scripts/check-private-boundary.mjs",
+    "demo": "node --experimental-strip-types src/demo.ts",
+    "lint": "node --experimental-strip-types scripts/build.mjs --check-only",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "verify": "pnpm run check:private-boundary && pnpm run build && pnpm test"
+  }
+}
