@@ -17,6 +17,7 @@
     "check:private-boundary": "node scripts/check-private-boundary.mjs",
     "demo": "node --experimental-strip-types src/demo.ts",
     "lint": "node --experimental-strip-types scripts/build.mjs --check-only",
+    "start": "node --experimental-strip-types src/server.ts",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "verify": "pnpm run check:private-boundary && pnpm run build && pnpm test"
   }

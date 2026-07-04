@@ -52,12 +52,19 @@ The compose file initializes PostgreSQL with the migration under `migrations/`.
 The draft OpenAPI contract lives in `openapi/openapi.yaml` and currently covers:
 
 - `POST /v1/consent-receipts`
+- `POST /v1/retention-rules`
 - `POST /v1/memories`
 - `POST /v1/memories/query`
 - `POST /v1/memories/{memoryId}/revoke`
 
 The package exports the in-memory engine, domain types, typed errors, and the
 deterministic contract compiler utilities from `src/index.ts`.
+
+To run the dependency-free API locally:
+
+```bash
+pnpm start
+```
 
 ## Safety Properties
 

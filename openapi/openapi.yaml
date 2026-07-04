@@ -5,6 +5,31 @@ info:
   license:
     name: Apache-2.0
 paths:
+  /v1/retention-rules:
+    post:
+      summary: Upsert a tenant-scoped retention rule for a memory type and purpose.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RetentionRuleRequest"
+      responses:
+        "200":
+          description: Retention rule saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+        "403":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
   /v1/consent-receipts:
     post:
       summary: Register consent for a subject and purpose.
@@ -151,6 +176,21 @@ components:
         expiresAt:
           type: string
           format: date-time
+      additionalProperties: false
+    RetentionRuleRequest:
+      type: object
+      required: [memoryType, purpose, ttlDays, deletionMode]
+      properties:
+        memoryType:
+          $ref: "#/components/schemas/MemoryType"
+        purpose:
+          type: string
+        ttlDays:
+          type: integer
+          minimum: 1
+        deletionMode:
+          type: string
+          enum: [soft_delete, hard_delete]
       additionalProperties: false
     RegisterMemoryRequest:
       type: object
