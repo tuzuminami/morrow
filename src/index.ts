@@ -37,4 +37,10 @@ export {
   type RetentionRule,
   type RevokeMemoryInput
 } from "./memory-engine.ts";
-export { createMorrowApiServer, type ApiServerOptions } from "./http-api.ts";
+export {
+  createMorrowApiServer,
+  dispatchMorrowHttpRequest,
+  type ApiServerOptions,
+  type HttpDispatchRequest,
+  type HttpDispatchResponse
+} from "./http-api.ts";

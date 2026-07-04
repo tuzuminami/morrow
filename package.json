@@ -10,7 +10,7 @@
     "migrations",
     "openapi",
     "README.md",
-    "LICENSE.md"
+    "LICENSE"
   ],
   "scripts": {
     "build": "node --experimental-strip-types scripts/build.mjs",
