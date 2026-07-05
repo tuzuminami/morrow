@@ -1,6 +1,6 @@
 {
   "name": "@tuzuminami/morrow",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Consent-aware memory and deterministic contract compilation foundations.",
   "type": "module",
   "license": "Apache-2.0",

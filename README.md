@@ -10,7 +10,7 @@ and adapter-ready architecture come before UI or provider integrations.
 
 ## Status
 
-This is a v0.1 bootstrap MVP. It includes:
+This is a v0.2 OSS preview. It includes:
 
 - typed memory registration for `episodic`, `fact`, `preference`,
   `relationship`, and `instruction`
@@ -18,15 +18,19 @@ This is a v0.1 bootstrap MVP. It includes:
 - retention rules and expiry filtering
 - tenant, subject, purpose, and policy-scoped retrieval
 - idempotent memory writes and revocations
+- deletion-request and subject-export HTTP routes
 - append-only audit events with actor, reason, and correlation ID
 - deterministic contract compilation utilities retained as a small companion
   module
+- dependency-free PostgreSQL transaction and memory-store ports that can be
+  wired to `pg.Pool` without importing provider SDKs into the domain layer
 - OpenAPI 3.1 draft, JSON Schema, PostgreSQL migration, Docker Compose, CI, and
   repository private-boundary guard
 
-Persistent PostgreSQL adapters and HTTP transport are the next implementation
-slice; the current executable engine uses an in-memory adapter for deterministic
-tests and local demos.
+The current executable API uses an in-memory adapter for deterministic tests and
+local demos. The PostgreSQL storage foundation is available as a port and
+transaction provider; production wiring is intentionally kept outside the domain
+core.
 
 ## Quick Start
 
@@ -56,6 +60,8 @@ The draft OpenAPI contract lives in `openapi/openapi.yaml` and currently covers:
 - `POST /v1/memories`
 - `POST /v1/memories/query`
 - `POST /v1/memories/{memoryId}/revoke`
+- `POST /v1/deletion-requests`
+- `GET /v1/subjects/{subjectId}/export`
 
 The package exports the in-memory engine, domain types, typed errors, and the
 deterministic contract compiler utilities from `src/index.ts`.
@@ -74,14 +80,20 @@ pnpm start
 - Expired retention removes memories from retrieval and export.
 - Repeated idempotency keys do not duplicate side effects.
 - Revocation clears retrievable content and records audit evidence.
+- Deletion requests revoke retrievable content and are idempotent.
+- SQL storage queries include tenant, subject, purpose, policy, status, and TTL
+  predicates at the database boundary.
 - Private operator material and private requirement documents are blocked by
   `.gitignore`, `.dockerignore`, `.npmignore`, and `scripts/check-private-boundary.mjs`.
 
 ## Limitations
 
-- HTTP transport is not implemented yet.
-- PostgreSQL schema is present, but the runtime storage adapter is still
-  in-memory.
+- Authentication is a development header adapter, not a production identity
+  provider integration.
+- The packaged runtime still defaults to in-memory storage. The PostgreSQL port
+  is driver-compatible, but this release does not bundle the `pg` dependency.
+- Vector search, plugin host runtime, workers, SDK, and CLI are planned
+  follow-up slices.
 - Strict TypeScript build is enabled, with JavaScript and declaration output
   emitted under `dist/`.
 

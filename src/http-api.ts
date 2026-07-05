@@ -138,6 +138,26 @@ async function dispatchMorrowHttpRequestUnsafe(
     return json(200, { data, meta: meta(context.correlationId) });
   }
 
+  if (request.method === "POST" && url.pathname === "/v1/deletion-requests") {
+    const body = readJsonText(request.bodyText);
+    const data = engine.createDeletionRequest(context, {
+      memoryId: requireString(body.memoryId),
+      reason: requireString(body.reason),
+      idempotencyKey: requiredHeader(request.headers, "idempotency-key")
+    });
+    return json(200, { data, meta: meta(context.correlationId) });
+  }
+
+  const exportMatch = /^\/v1\/subjects\/([^/]+)\/export$/.exec(url.pathname);
+  if (request.method === "GET" && exportMatch !== null) {
+    const subjectId = exportMatch[1];
+    if (subjectId === undefined) {
+      throw new MorrowError("VALIDATION_FAILED", "subjectId is required.");
+    }
+    const data = { memories: engine.exportSubject(context, decodeURIComponent(subjectId)) };
+    return json(200, { data, meta: meta(context.correlationId) });
+  }
+
   return json(404, {
     error: {
       code: "RESOURCE_NOT_FOUND",

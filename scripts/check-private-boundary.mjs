@@ -11,8 +11,10 @@ const prohibitedPathPatterns = [
 ];
 
 const prohibitedMarkers = [
+  ["PRIVATE", "CONTROL", "DOCUMENT"].join(" "),
   ["PRIVATE", "SPECIFICATION", "DO", "NOT", "COMMIT"].join("_"),
   ["PRIVATE", "OPERATOR", "MATERIAL"].join("_"),
+  ["DO", "NOT", "COMMIT"].join(" "),
   ["DO", "NOT", "COMMIT", "OR", "PUBLISH"].join("_")
 ];
 

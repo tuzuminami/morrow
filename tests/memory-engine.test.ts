@@ -236,3 +236,38 @@ test("TEST-AUDIT-001 revoke clears content and writes append-only audit evidence
   }).length, 0);
   assert.ok(engine.auditEvents().some((event) => event.action === "memory.revoke" && event.beforeHash !== event.afterHash));
 });
+
+test("AT-MORROW-003 deletion request revokes memory and is idempotent", () => {
+  const engine = createEngine();
+  configurePreferenceFlow(engine);
+  const memory = engine.registerMemory(fullScopeContext, {
+    subjectId: "subject_1",
+    type: "preference",
+    purpose: "assistant_personalization",
+    policyRef: "default-policy",
+    content: "Prefers concise answers.",
+    source: { kind: "user_statement", reference: "message_1" },
+    confidence: 0.9,
+    classification: "sensitive",
+    idempotencyKey: "idem_1"
+  });
+
+  const first = engine.createDeletionRequest(fullScopeContext, {
+    memoryId: memory.id,
+    reason: "subject-request",
+    idempotencyKey: "delete_1"
+  });
+  const second = engine.createDeletionRequest(fullScopeContext, {
+    memoryId: memory.id,
+    reason: "subject-request",
+    idempotencyKey: "delete_1"
+  });
+
+  assert.equal(second.id, first.id);
+  assert.equal(engine.queryMemories(fullScopeContext, {
+    subjectId: "subject_1",
+    purpose: "assistant_personalization",
+    policyRef: "default-policy"
+  }).length, 0);
+  assert.ok(engine.auditEvents().some((event) => event.action === "deletion-request.complete"));
+});

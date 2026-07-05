@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tuzuminami.github.io/morrow/schemas/deletion-request.schema.json",
+  "title": "MORROW Deletion Request",
+  "type": "object",
+  "required": ["memoryId", "reason", "idempotencyKey"],
+  "properties": {
+    "memoryId": { "type": "string", "minLength": 1 },
+    "reason": { "type": "string", "minLength": 1 },
+    "idempotencyKey": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": false
+}

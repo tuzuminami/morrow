@@ -89,6 +89,23 @@ export interface RevokeMemoryInput {
   readonly idempotencyKey: string;
 }
 
+export interface DeletionRequestInput {
+  readonly memoryId: string;
+  readonly reason: string;
+  readonly idempotencyKey: string;
+}
+
+export interface DeletionRequest {
+  readonly id: string;
+  readonly tenantId: string;
+  readonly memoryId: string;
+  readonly reason: string;
+  readonly status: "completed";
+  readonly createdAt: string;
+  readonly createdBy: string;
+  readonly correlationId: string;
+}
+
 export interface MemoryAuditEvent {
   readonly id: string;
   readonly tenantId: string;
@@ -126,6 +143,7 @@ export class InMemoryMemoryEngine {
   private readonly consentReceipts = new Map<string, ConsentReceipt>();
   private readonly retentionRules = new Map<string, RetentionRule>();
   private readonly memories = new Map<string, MemoryRecord>();
+  private readonly deletionRequests = new Map<string, DeletionRequest>();
   private readonly idempotencyResults = new Map<string, string>();
   private readonly audits: MemoryAuditEvent[] = [];
   private readonly clock: MemoryClock;
@@ -281,6 +299,40 @@ export class InMemoryMemoryEngine {
     this.idempotencyResults.set(idempotencyKey(context, input.idempotencyKey), next.id);
     this.appendAudit(context, "memory.revoke", next.id, input.reason, memory.contentHash, next.contentHash);
     return next;
+  }
+
+  createDeletionRequest(context: MemoryTenantContext, input: DeletionRequestInput): DeletionRequest {
+    requireScope(context, "memory:delete");
+    const key = idempotencyKey(context, input.idempotencyKey);
+    const existingId = this.idempotencyResults.get(key);
+    if (existingId !== undefined) {
+      const existing = this.deletionRequests.get(existingId);
+      if (existing !== undefined) {
+        return existing;
+      }
+    }
+
+    assertNonEmpty(input.reason, "reason");
+    const memory = this.revokeMemory(context, {
+      memoryId: input.memoryId,
+      reason: input.reason,
+      idempotencyKey: `${input.idempotencyKey}:revoke`
+    });
+    const now = this.clock.now().toISOString();
+    const request: DeletionRequest = {
+      id: this.ids.nextId("del"),
+      tenantId: context.tenantId,
+      memoryId: memory.id,
+      reason: input.reason,
+      status: "completed",
+      createdAt: now,
+      createdBy: context.actorId,
+      correlationId: context.correlationId
+    };
+    this.deletionRequests.set(request.id, request);
+    this.idempotencyResults.set(key, request.id);
+    this.appendAudit(context, "deletion-request.complete", request.id, input.reason, memory.contentHash, undefined);
+    return request;
   }
 
   exportSubject(context: MemoryTenantContext, subjectId: string): readonly Omit<MemoryRecord, "tenantId">[] {

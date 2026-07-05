@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MORROW API
-  version: 0.1.0
+  version: 0.2.0
   license:
     name: Apache-2.0
 paths:
@@ -120,9 +120,63 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevokeMemoryRequest"
       responses:
         "200":
           description: Memory revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+        "403":
+          $ref: "#/components/responses/Error"
+  /v1/deletion-requests:
+    post:
+      summary: Create an idempotent deletion request and revoke retrievable content.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeletionRequestRequest"
+      responses:
+        "200":
+          description: Deletion request completed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+        "403":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+  /v1/subjects/{subjectId}/export:
+    get:
+      summary: Export active, unexpired memories for a subject within the authenticated tenant.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/CorrelationId"
+        - name: subjectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Subject export.
           content:
             application/json:
               schema:
@@ -226,6 +280,25 @@ components:
           type: string
         policyRef:
           type: string
+      additionalProperties: false
+    RevokeMemoryRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+      additionalProperties: false
+    DeletionRequestRequest:
+      type: object
+      required: [memoryId, reason]
+      properties:
+        memoryId:
+          type: string
+          minLength: 1
+        reason:
+          type: string
+          minLength: 1
       additionalProperties: false
     MemoryType:
       type: string

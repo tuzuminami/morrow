@@ -52,6 +52,56 @@ test("TEST-API-001 HTTP primary flow stores and queries consent-scoped memory", 
   assert.equal(queryBody.data.memories.length, 1);
 });
 
+test("TEST-API-006 deletion request and subject export complete the public API flow", async () => {
+  const engine = createEngine();
+  await post(engine, "/v1/retention-rules", {
+    memoryType: "preference",
+    purpose: "assistant_personalization",
+    ttlDays: 30,
+    deletionMode: "soft_delete"
+  });
+  await post(engine, "/v1/consent-receipts", {
+    subjectId: "subject_api",
+    purpose: "assistant_personalization",
+    scope: ["preference"],
+    expiresAt: "2099-01-01T00:00:00.000Z"
+  });
+  const createResponse = await post(engine, "/v1/memories", {
+    subjectId: "subject_api",
+    type: "preference",
+    purpose: "assistant_personalization",
+    policyRef: "default-policy",
+    content: "Prefers exportable memories.",
+    source: { kind: "user_statement", reference: "message_api" },
+    confidence: 0.9,
+    classification: "sensitive"
+  }, "idem-api-export");
+  const created = createResponse.body as { readonly data: { readonly id: string } };
+
+  const exportBefore = await dispatchMorrowHttpRequest(engine, {
+    method: "GET",
+    path: "/v1/subjects/subject_api/export",
+    headers: authorizedHeaders()
+  });
+  const exportBeforeBody = exportBefore.body as { readonly data: { readonly memories: readonly unknown[] } };
+  assert.equal(exportBeforeBody.data.memories.length, 1);
+
+  const deleteResponse = await post(engine, "/v1/deletion-requests", {
+    memoryId: created.data.id,
+    reason: "subject-request"
+  }, "idem-api-delete");
+
+  assert.equal(deleteResponse.statusCode, 200);
+
+  const exportAfter = await dispatchMorrowHttpRequest(engine, {
+    method: "GET",
+    path: "/v1/subjects/subject_api/export",
+    headers: authorizedHeaders()
+  });
+  const exportAfterBody = exportAfter.body as { readonly data: { readonly memories: readonly unknown[] } };
+  assert.equal(exportAfterBody.data.memories.length, 0);
+});
+
 test("TEST-API-002 HTTP rejects missing authorization before state change", async () => {
   const response = await dispatchMorrowHttpRequest(createEngine(), {
     method: "POST",

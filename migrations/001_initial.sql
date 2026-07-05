@@ -41,6 +41,20 @@ CREATE TABLE IF NOT EXISTS memories (
 CREATE INDEX IF NOT EXISTS memories_scope_idx
   ON memories (tenant_id, subject_id, purpose, policy_ref, status, retention_expires_at);
 
+CREATE TABLE IF NOT EXISTS deletion_requests (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  memory_id TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL,
+  created_by TEXT NOT NULL,
+  correlation_id TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS deletion_requests_scope_idx
+  ON deletion_requests (tenant_id, memory_id, status, created_at);
+
 CREATE TABLE IF NOT EXISTS audit_events (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL,
