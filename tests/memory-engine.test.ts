@@ -6,7 +6,7 @@ import {
   type MemoryClock,
   type MemoryIdGenerator,
   type MemoryTenantContext
-} from "../src/index.ts";
+} from "../src/index.js";
 
 class FixedClock implements MemoryClock {
   private current: Date;

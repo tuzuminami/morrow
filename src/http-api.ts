@@ -9,7 +9,7 @@ import {
   type MemorySource,
   type MemoryTenantContext,
   type MemoryType
-} from "./index.ts";
+} from "./index.js";
 
 export interface ApiServerOptions {
   readonly engine?: InMemoryMemoryEngine;

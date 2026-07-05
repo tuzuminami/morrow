@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { canonicalJson, type JsonObject, type JsonValue } from "./canonical-json.ts";
-import { MorrowError } from "./errors.ts";
+import { canonicalJson, type JsonObject, type JsonValue } from "./canonical-json.js";
+import { MorrowError } from "./errors.js";
 
 export const compilerVersion = "morrow-persona-compiler/0.1.0";
 

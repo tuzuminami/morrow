@@ -1,4 +1,4 @@
-import { InMemoryMemoryEngine, RandomMemoryIds, RealtimeMemoryClock, type MemoryTenantContext } from "./index.ts";
+import { InMemoryMemoryEngine, RandomMemoryIds, RealtimeMemoryClock, type MemoryTenantContext } from "./index.js";
 
 const context: MemoryTenantContext = {
   tenantId: "demo_tenant",

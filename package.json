@@ -4,7 +4,16 @@
   "description": "Consent-aware memory and deterministic contract compilation foundations.",
   "type": "module",
   "license": "Apache-2.0",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
   "files": [
+    "CHANGELOG.md",
     "contracts",
     "dist",
     "migrations",
@@ -13,12 +22,16 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "node --experimental-strip-types scripts/build.mjs",
+    "build": "tsc -p tsconfig.json",
     "check:private-boundary": "node scripts/check-private-boundary.mjs",
-    "demo": "node --experimental-strip-types src/demo.ts",
-    "lint": "node --experimental-strip-types scripts/build.mjs --check-only",
-    "start": "node --experimental-strip-types src/server.ts",
-    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "demo": "pnpm run build && node dist/src/demo.js",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/src/server.js",
+    "test": "node --test dist/tests/*.test.js",
     "verify": "pnpm run check:private-boundary && pnpm run build && pnpm test"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.0",
+    "typescript": "5.9.2"
   }
 }

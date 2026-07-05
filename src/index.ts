@@ -14,8 +14,8 @@ export {
   type PersonaStore,
   type PersonaVersion,
   type TenantContext
-} from "./persona-contract.ts";
-export { MorrowError, isMorrowError, type ErrorCode } from "./errors.ts";
+} from "./persona-contract.js";
+export { MorrowError, isMorrowError, type ErrorCode } from "./errors.js";
 export {
   InMemoryMemoryEngine,
   RandomMemoryIds,
@@ -36,11 +36,11 @@ export {
   type RegisterMemoryInput,
   type RetentionRule,
   type RevokeMemoryInput
-} from "./memory-engine.ts";
+} from "./memory-engine.js";
 export {
   createMorrowApiServer,
   dispatchMorrowHttpRequest,
   type ApiServerOptions,
   type HttpDispatchRequest,
   type HttpDispatchResponse
-} from "./http-api.ts";
+} from "./http-api.js";

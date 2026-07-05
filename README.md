@@ -82,9 +82,8 @@ pnpm start
 - HTTP transport is not implemented yet.
 - PostgreSQL schema is present, but the runtime storage adapter is still
   in-memory.
-- TypeScript is executed with Node.js type stripping in this offline-friendly
-  MVP; full `tsc --noEmit` strict checking will be restored when the dependency
-  toolchain is available.
+- Strict TypeScript build is enabled, with JavaScript and declaration output
+  emitted under `dist/`.
 
 ## License
 

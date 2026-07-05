@@ -8,7 +8,7 @@ import {
   type IdGenerator,
   type PersonaContract,
   type TenantContext
-} from "../src/index.ts";
+} from "../src/index.js";
 
 class FixedClock implements Clock {
   now(): Date {

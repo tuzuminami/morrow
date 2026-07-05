@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { MorrowError } from "./errors.ts";
+import { MorrowError } from "./errors.js";
 
 export type MemoryType = "episodic" | "fact" | "preference" | "relationship" | "instruction";
 export type MemoryStatus = "active" | "revoked" | "expired" | "deleted";
@@ -341,7 +341,7 @@ export class InMemoryMemoryEngine {
     beforeHash?: string,
     afterHash?: string
   ): void {
-    this.audits.push({
+    const event: MemoryAuditEvent = {
       id: this.ids.nextId("audit"),
       tenantId: context.tenantId,
       actorId: context.actorId,
@@ -349,10 +349,15 @@ export class InMemoryMemoryEngine {
       action,
       resourceId,
       reason,
-      beforeHash,
-      afterHash,
       occurredAt: this.clock.now().toISOString()
-    });
+    };
+    if (beforeHash !== undefined) {
+      Object.assign(event, { beforeHash });
+    }
+    if (afterHash !== undefined) {
+      Object.assign(event, { afterHash });
+    }
+    this.audits.push(event);
   }
 }
 
