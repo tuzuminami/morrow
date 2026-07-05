@@ -1,20 +1,3 @@
-export {
-  InMemoryPersonaStore,
-  PersonaCompiler,
-  SystemClock,
-  UuidGenerator,
-  compilerVersion,
-  validatePersonaContract,
-  type AuditEvent,
-  type Clock,
-  type CompiledBundle,
-  type IdGenerator,
-  type PersonaContract,
-  type PersonaDraft,
-  type PersonaStore,
-  type PersonaVersion,
-  type TenantContext
-} from "./persona-contract.js";
 export { MorrowError, isMorrowError, type ErrorCode } from "./errors.js";
 export {
   InMemoryMemoryEngine,

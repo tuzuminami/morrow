@@ -1,14 +1,12 @@
-import { mkdirSync, cpSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { rmSync } from "node:fs";
 
 const checkOnly = process.argv.includes("--check-only");
 
 if (!checkOnly) {
   rmSync("dist", { force: true, recursive: true });
-  mkdirSync("dist", { recursive: true });
-  cpSync("src", join("dist", "src"), { recursive: true });
 }
 
-await import("../src/index.ts");
-
-console.log(checkOnly ? "Syntax check passed." : "Build artifact prepared in dist/.");
+execFileSync("tsc", ["-p", "tsconfig.json", ...(checkOnly ? ["--noEmit"] : [])], {
+  stdio: "inherit"
+});

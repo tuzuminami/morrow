@@ -78,6 +78,7 @@ export interface RegisterMemoryInput {
 
 export interface QueryMemoryInput {
   readonly subjectId: string;
+  readonly type: MemoryType;
   readonly purpose: string;
   readonly policyRef: string;
   readonly now?: Date;
@@ -145,6 +146,7 @@ export class InMemoryMemoryEngine {
   private readonly memories = new Map<string, MemoryRecord>();
   private readonly deletionRequests = new Map<string, DeletionRequest>();
   private readonly idempotencyResults = new Map<string, string>();
+  private readonly idempotencyFingerprints = new Map<string, string>();
   private readonly audits: MemoryAuditEvent[] = [];
   private readonly clock: MemoryClock;
   private readonly ids: MemoryIdGenerator;
@@ -194,7 +196,20 @@ export class InMemoryMemoryEngine {
 
   registerMemory(context: MemoryTenantContext, input: RegisterMemoryInput): MemoryRecord {
     requireScope(context, "memory:write");
-    const existingId = this.idempotencyResults.get(idempotencyKey(context, input.idempotencyKey));
+    validateMemoryInput(input);
+    const key = idempotencyKey(context, input.idempotencyKey);
+    const fingerprint = idempotencyFingerprint("memory.write", {
+      subjectId: input.subjectId,
+      type: input.type,
+      purpose: input.purpose,
+      policyRef: input.policyRef,
+      content: input.content,
+      sourceKind: input.source.kind,
+      sourceReference: input.source.reference,
+      confidence: input.confidence,
+      classification: input.classification
+    });
+    const existingId = this.resolveIdempotency(key, fingerprint);
     if (existingId !== undefined) {
       const existing = this.memories.get(existingId);
       if (existing !== undefined) {
@@ -202,7 +217,6 @@ export class InMemoryMemoryEngine {
       }
     }
 
-    validateMemoryInput(input);
     const now = this.clock.now();
     const consent = this.findValidConsent(context.tenantId, input.subjectId, input.purpose, input.type, now);
     if (consent === undefined) {
@@ -235,7 +249,7 @@ export class InMemoryMemoryEngine {
       version: 1
     };
     this.memories.set(memory.id, memory);
-    this.idempotencyResults.set(idempotencyKey(context, input.idempotencyKey), memory.id);
+    this.recordIdempotency(key, fingerprint, memory.id);
     this.appendAudit(context, "memory.create", memory.id, "memory-created", undefined, memory.contentHash);
     return memory;
   }
@@ -259,10 +273,11 @@ export class InMemoryMemoryEngine {
       return (
         memory.tenantId === context.tenantId &&
         memory.subjectId === input.subjectId &&
+        memory.type === input.type &&
         memory.purpose === input.purpose &&
         memory.policyRef === input.policyRef &&
         memory.status === "active" &&
-        consentTypes.has(memory.type) &&
+        consentTypes.has(input.type) &&
         parseDate(memory.retentionExpiresAt, "retentionExpiresAt") > now
       );
     });
@@ -272,7 +287,15 @@ export class InMemoryMemoryEngine {
 
   revokeMemory(context: MemoryTenantContext, input: RevokeMemoryInput): MemoryRecord {
     requireScope(context, "memory:delete");
-    const existingId = this.idempotencyResults.get(idempotencyKey(context, input.idempotencyKey));
+    assertNonEmpty(input.memoryId, "memoryId");
+    assertNonEmpty(input.reason, "reason");
+    assertNonEmpty(input.idempotencyKey, "idempotencyKey");
+    const key = idempotencyKey(context, input.idempotencyKey);
+    const fingerprint = idempotencyFingerprint("memory.revoke", {
+      memoryId: input.memoryId,
+      reason: input.reason
+    });
+    const existingId = this.resolveIdempotency(key, fingerprint);
     if (existingId !== undefined) {
       const existing = this.memories.get(existingId);
       if (existing !== undefined) {
@@ -280,7 +303,6 @@ export class InMemoryMemoryEngine {
       }
     }
 
-    assertNonEmpty(input.reason, "reason");
     const memory = this.requireMemoryForTenant(context, input.memoryId);
     if (memory.status !== "active") {
       return memory;
@@ -296,15 +318,22 @@ export class InMemoryMemoryEngine {
       version: memory.version + 1
     };
     this.memories.set(next.id, next);
-    this.idempotencyResults.set(idempotencyKey(context, input.idempotencyKey), next.id);
+    this.recordIdempotency(key, fingerprint, next.id);
     this.appendAudit(context, "memory.revoke", next.id, input.reason, memory.contentHash, next.contentHash);
     return next;
   }
 
   createDeletionRequest(context: MemoryTenantContext, input: DeletionRequestInput): DeletionRequest {
     requireScope(context, "memory:delete");
+    assertNonEmpty(input.memoryId, "memoryId");
+    assertNonEmpty(input.reason, "reason");
+    assertNonEmpty(input.idempotencyKey, "idempotencyKey");
     const key = idempotencyKey(context, input.idempotencyKey);
-    const existingId = this.idempotencyResults.get(key);
+    const fingerprint = idempotencyFingerprint("deletion-request.create", {
+      memoryId: input.memoryId,
+      reason: input.reason
+    });
+    const existingId = this.resolveIdempotency(key, fingerprint);
     if (existingId !== undefined) {
       const existing = this.deletionRequests.get(existingId);
       if (existing !== undefined) {
@@ -312,7 +341,6 @@ export class InMemoryMemoryEngine {
       }
     }
 
-    assertNonEmpty(input.reason, "reason");
     const memory = this.revokeMemory(context, {
       memoryId: input.memoryId,
       reason: input.reason,
@@ -330,7 +358,7 @@ export class InMemoryMemoryEngine {
       correlationId: context.correlationId
     };
     this.deletionRequests.set(request.id, request);
-    this.idempotencyResults.set(key, request.id);
+    this.recordIdempotency(key, fingerprint, request.id);
     this.appendAudit(context, "deletion-request.complete", request.id, input.reason, memory.contentHash, undefined);
     return request;
   }
@@ -353,6 +381,26 @@ export class InMemoryMemoryEngine {
 
   auditEvents(): readonly MemoryAuditEvent[] {
     return [...this.audits];
+  }
+
+  private resolveIdempotency(key: string, fingerprint: string): string | undefined {
+    const existingFingerprint = this.idempotencyFingerprints.get(key);
+    if (existingFingerprint === undefined) {
+      return undefined;
+    }
+    if (existingFingerprint !== fingerprint) {
+      throw new MorrowError("VERSION_CONFLICT", "Idempotency key conflicts with a previous request.");
+    }
+    const existingId = this.idempotencyResults.get(key);
+    if (existingId === undefined) {
+      throw new MorrowError("VERSION_CONFLICT", "Idempotency key is reserved without a completed result.");
+    }
+    return existingId;
+  }
+
+  private recordIdempotency(key: string, fingerprint: string, resourceId: string): void {
+    this.idempotencyFingerprints.set(key, fingerprint);
+    this.idempotencyResults.set(key, resourceId);
   }
 
   private requireMemoryForTenant(context: MemoryTenantContext, memoryId: string): MemoryRecord {
@@ -443,6 +491,10 @@ function retentionKey(tenantId: string, memoryType: MemoryType, purpose: string)
 
 function idempotencyKey(context: MemoryTenantContext, key: string): string {
   return `${context.tenantId}:${context.actorId}:${key}`;
+}
+
+function idempotencyFingerprint(operation: string, fields: Record<string, unknown>): string {
+  return sha256(JSON.stringify({ operation, ...fields }));
 }
 
 function parseDate(value: string, field: string): Date {

@@ -116,6 +116,7 @@ async function dispatchMorrowHttpRequestUnsafe(
     const data = {
       memories: engine.queryMemories(context, {
         subjectId: requireString(body.subjectId),
+        type: requireMemoryType(body.type),
         purpose: requireString(body.purpose),
         policyRef: requireString(body.policyRef)
       })

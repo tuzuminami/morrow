@@ -41,6 +41,7 @@ test("TEST-API-001 HTTP primary flow stores and queries consent-scoped memory", 
 
   const queryResponse = await post(engine, "/v1/memories/query", {
     subjectId: "subject_api",
+    type: "preference",
     purpose: "assistant_personalization",
     policyRef: "default-policy"
   });

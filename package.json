@@ -1,7 +1,7 @@
 {
   "name": "@tuzuminami/morrow",
   "version": "0.2.0",
-  "description": "Consent-aware memory and deterministic contract compilation foundations.",
+  "description": "Standalone consent-aware memory engine foundations.",
   "type": "module",
   "license": "Apache-2.0",
   "main": "./dist/src/index.js",
@@ -15,14 +15,14 @@
   "files": [
     "CHANGELOG.md",
     "contracts",
-    "dist",
+    "dist/src",
     "migrations",
     "openapi",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node scripts/build.mjs",
     "check:private-boundary": "node scripts/check-private-boundary.mjs",
     "demo": "pnpm run build && node dist/src/demo.js",
     "lint": "tsc -p tsconfig.json --noEmit",

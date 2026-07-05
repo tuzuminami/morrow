@@ -52,13 +52,17 @@ function createEngine(clock = new FixedClock()): InMemoryMemoryEngine {
 }
 
 function configurePreferenceFlow(engine: InMemoryMemoryEngine): void {
-  engine.upsertRetentionRule(fullScopeContext, {
+  configurePreferenceFlowFor(engine, fullScopeContext);
+}
+
+function configurePreferenceFlowFor(engine: InMemoryMemoryEngine, context: MemoryTenantContext): void {
+  engine.upsertRetentionRule(context, {
     memoryType: "preference",
     purpose: "assistant_personalization",
     ttlDays: 30,
     deletionMode: "soft_delete"
   });
-  engine.registerConsent(fullScopeContext, {
+  engine.registerConsent(context, {
     subjectId: "subject_1",
     purpose: "assistant_personalization",
     scope: ["preference"],
@@ -84,6 +88,7 @@ test("AT-MORROW-001 stores and retrieves typed memory only with consent, tenant,
 
   const results = engine.queryMemories(fullScopeContext, {
     subjectId: "subject_1",
+    type: "preference",
     purpose: "assistant_personalization",
     policyRef: "default-policy"
   });
@@ -120,6 +125,7 @@ test("AT-MORROW-002 missing consent fails closed before persistence", () => {
 
   assert.equal(engine.queryMemories(fullScopeContext, {
     subjectId: "subject_1",
+    type: "preference",
     purpose: "assistant_personalization",
     policyRef: "default-policy"
   }).length, 0);
@@ -143,6 +149,7 @@ test("TEST-TENANT-001 wrong tenant cannot retrieve or revoke memory", () => {
   assert.deepEqual(
     engine.queryMemories(otherTenantContext, {
       subjectId: "subject_1",
+      type: "preference",
       purpose: "assistant_personalization",
       policyRef: "default-policy"
     }),
@@ -175,6 +182,36 @@ test("TEST-IDEMP-001 repeated idempotency key does not duplicate memory", () => 
   assert.equal(second.id, first.id);
   assert.equal(engine.queryMemories(fullScopeContext, {
     subjectId: "subject_1",
+    type: "preference",
+    purpose: "assistant_personalization",
+    policyRef: "default-policy"
+  }).length, 1);
+});
+
+test("TEST-IDEMP-002 conflicting idempotency key fails closed", () => {
+  const engine = createEngine();
+  configurePreferenceFlow(engine);
+  const input = {
+    subjectId: "subject_1",
+    type: "preference" as const,
+    purpose: "assistant_personalization",
+    policyRef: "default-policy",
+    content: "Prefers concise answers.",
+    source: { kind: "user_statement" as const, reference: "message_1" },
+    confidence: 0.9,
+    classification: "sensitive" as const,
+    idempotencyKey: "idem_conflict"
+  };
+
+  engine.registerMemory(fullScopeContext, input);
+
+  assert.throws(
+    () => engine.registerMemory(fullScopeContext, { ...input, content: "Conflicting retry payload." }),
+    (error: unknown) => error instanceof MorrowError && error.code === "VERSION_CONFLICT"
+  );
+  assert.equal(engine.queryMemories(fullScopeContext, {
+    subjectId: "subject_1",
+    type: "preference",
     purpose: "assistant_personalization",
     policyRef: "default-policy"
   }).length, 1);
@@ -200,6 +237,7 @@ test("TEST-RETENTION-001 expired retention removes memory from retrieval and exp
 
   assert.equal(engine.queryMemories(fullScopeContext, {
     subjectId: "subject_1",
+    type: "preference",
     purpose: "assistant_personalization",
     policyRef: "default-policy"
   }).length, 0);
@@ -231,6 +269,7 @@ test("TEST-AUDIT-001 revoke clears content and writes append-only audit evidence
   assert.equal(revoked.content, "");
   assert.equal(engine.queryMemories(fullScopeContext, {
     subjectId: "subject_1",
+    type: "preference",
     purpose: "assistant_personalization",
     policyRef: "default-policy"
   }).length, 0);
@@ -266,8 +305,80 @@ test("AT-MORROW-003 deletion request revokes memory and is idempotent", () => {
   assert.equal(second.id, first.id);
   assert.equal(engine.queryMemories(fullScopeContext, {
     subjectId: "subject_1",
+    type: "preference",
     purpose: "assistant_personalization",
     policyRef: "default-policy"
   }).length, 0);
   assert.ok(engine.auditEvents().some((event) => event.action === "deletion-request.complete"));
+});
+
+test("TEST-EXPORT-001 subject export excludes other tenants", () => {
+  const engine = createEngine();
+  configurePreferenceFlowFor(engine, fullScopeContext);
+  configurePreferenceFlowFor(engine, otherTenantContext);
+  engine.registerMemory(fullScopeContext, {
+    subjectId: "subject_1",
+    type: "preference",
+    purpose: "assistant_personalization",
+    policyRef: "default-policy",
+    content: "Tenant A memory.",
+    source: { kind: "user_statement", reference: "message_a" },
+    confidence: 0.9,
+    classification: "sensitive",
+    idempotencyKey: "idem_tenant_a"
+  });
+  engine.registerMemory(otherTenantContext, {
+    subjectId: "subject_1",
+    type: "preference",
+    purpose: "assistant_personalization",
+    policyRef: "default-policy",
+    content: "Tenant B memory.",
+    source: { kind: "user_statement", reference: "message_b" },
+    confidence: 0.9,
+    classification: "sensitive",
+    idempotencyKey: "idem_tenant_b"
+  });
+
+  const exported = engine.exportSubject(otherTenantContext, "subject_1");
+
+  assert.equal(exported.length, 1);
+  assert.equal(exported[0]?.content, "Tenant B memory.");
+});
+
+test("TEST-AUDIT-002 primary flow appends audit events for important state changes", () => {
+  const engine = createEngine();
+  configurePreferenceFlow(engine);
+  const memory = engine.registerMemory(fullScopeContext, {
+    subjectId: "subject_1",
+    type: "preference",
+    purpose: "assistant_personalization",
+    policyRef: "default-policy",
+    content: "Prefers auditable memory operations.",
+    source: { kind: "user_statement", reference: "message_audit" },
+    confidence: 0.9,
+    classification: "sensitive",
+    idempotencyKey: "idem_audit"
+  });
+  engine.queryMemories(fullScopeContext, {
+    subjectId: "subject_1",
+    type: "preference",
+    purpose: "assistant_personalization",
+    policyRef: "default-policy"
+  });
+  engine.exportSubject(fullScopeContext, "subject_1");
+  engine.createDeletionRequest(fullScopeContext, {
+    memoryId: memory.id,
+    reason: "subject-request",
+    idempotencyKey: "idem_delete_audit"
+  });
+
+  const actions = engine.auditEvents().map((event) => event.action);
+
+  assert.ok(actions.includes("retention.upsert"));
+  assert.ok(actions.includes("consent.register"));
+  assert.ok(actions.includes("memory.create"));
+  assert.ok(actions.includes("memory.query"));
+  assert.ok(actions.includes("memory.export"));
+  assert.ok(actions.includes("memory.revoke"));
+  assert.ok(actions.includes("deletion-request.complete"));
 });

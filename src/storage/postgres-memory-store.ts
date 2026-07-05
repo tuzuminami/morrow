@@ -131,7 +131,14 @@ export class PostgresMemoryStore {
     });
   }
 
-  async queryActiveMemories(context: MemoryTenantContext, subjectId: string, purpose: string, policyRef: string, now: Date): Promise<readonly MemoryRecord[]> {
+  async queryActiveMemories(
+    context: MemoryTenantContext,
+    subjectId: string,
+    type: MemoryRecord["type"],
+    purpose: string,
+    policyRef: string,
+    now: Date
+  ): Promise<readonly MemoryRecord[]> {
     const result = await this.tx.transaction((client) =>
       client.query<MemoryRow>(
         `SELECT
@@ -141,12 +148,13 @@ export class PostgresMemoryStore {
         FROM memories
         WHERE tenant_id = $1
           AND subject_id = $2
-          AND purpose = $3
-          AND policy_ref = $4
+          AND type = $3
+          AND purpose = $4
+          AND policy_ref = $5
           AND status = 'active'
-          AND retention_expires_at > $5
+          AND retention_expires_at > $6
         ORDER BY created_at ASC`,
-        [context.tenantId, subjectId, purpose, policyRef, now.toISOString()]
+        [context.tenantId, subjectId, type, purpose, policyRef, now.toISOString()]
       )
     );
 

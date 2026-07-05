@@ -85,7 +85,7 @@ paths:
           $ref: "#/components/responses/Error"
   /v1/memories/query:
     post:
-      summary: Query active memories by tenant, subject, purpose, and policy reference.
+      summary: Query active memories by tenant, subject, type, purpose, and policy reference.
       security:
         - bearerAuth: []
       parameters:
@@ -272,10 +272,12 @@ components:
       additionalProperties: false
     QueryMemoryRequest:
       type: object
-      required: [subjectId, purpose, policyRef]
+      required: [subjectId, type, purpose, policyRef]
       properties:
         subjectId:
           type: string
+        type:
+          $ref: "#/components/schemas/MemoryType"
         purpose:
           type: string
         policyRef:

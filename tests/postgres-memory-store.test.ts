@@ -54,6 +54,7 @@ test("TEST-STORAGE-002 PostgreSQL query includes tenant predicate and scope fiel
   await store.queryActiveMemories(
     context,
     "subject_sql",
+    "preference",
     "assistant_personalization",
     "default-policy",
     new Date("2026-07-05T00:00:00.000Z")
@@ -62,9 +63,11 @@ test("TEST-STORAGE-002 PostgreSQL query includes tenant predicate and scope fiel
   const sql = tx.queries[0]?.sql ?? "";
   assert.match(sql, /WHERE tenant_id = \$1/);
   assert.match(sql, /AND subject_id = \$2/);
-  assert.match(sql, /AND purpose = \$3/);
-  assert.match(sql, /AND policy_ref = \$4/);
+  assert.match(sql, /AND type = \$3/);
+  assert.match(sql, /AND purpose = \$4/);
+  assert.match(sql, /AND policy_ref = \$5/);
   assert.equal(tx.queries[0]?.values[0], "tenant_sql");
+  assert.equal(tx.queries[0]?.values[2], "preference");
 });
 
 test("TEST-STORAGE-003 pooled transaction provider commits and releases clients", async () => {

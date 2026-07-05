@@ -37,6 +37,7 @@ const memory = engine.registerMemory(context, {
 
 const results = engine.queryMemories(context, {
   subjectId: "subject_demo",
+  type: "preference",
   purpose: "assistant_personalization",
   policyRef: "default-policy"
 });

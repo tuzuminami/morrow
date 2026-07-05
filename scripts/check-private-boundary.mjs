@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const prohibitedPathPatterns = [
   /(^|\/)CODEX(_AI_COMPANION_OSS)?_IMPLEMENTATION_HARNESS\.md$/,
@@ -36,6 +36,9 @@ const failures = [];
 
 for (const file of files) {
   if (file === ".env.example") {
+    continue;
+  }
+  if (!existsSync(file)) {
     continue;
   }
 
