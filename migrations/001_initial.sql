@@ -39,7 +39,18 @@ CREATE TABLE IF NOT EXISTS memories (
 );
 
 CREATE INDEX IF NOT EXISTS memories_scope_idx
-  ON memories (tenant_id, subject_id, purpose, policy_ref, status, retention_expires_at);
+  ON memories (tenant_id, subject_id, type, purpose, policy_ref, status, retention_expires_at);
+
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+  tenant_id TEXT NOT NULL,
+  actor_id TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  operation TEXT NOT NULL,
+  request_hash TEXT NOT NULL,
+  resource_id TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (tenant_id, actor_id, idempotency_key)
+);
 
 CREATE TABLE IF NOT EXISTS deletion_requests (
   id TEXT PRIMARY KEY,

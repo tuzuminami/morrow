@@ -29,7 +29,8 @@ function listFiles(args) {
 
 const files = new Set([
   ...listFiles(["ls-files"]),
-  ...listFiles(["diff", "--cached", "--name-only"])
+  ...listFiles(["diff", "--cached", "--name-only"]),
+  ...listFiles(["ls-files", "--others", "--exclude-standard"])
 ]);
 
 const failures = [];

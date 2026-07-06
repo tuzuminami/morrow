@@ -23,12 +23,13 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
+    "check:migrations": "node scripts/check-migrations.mjs",
     "check:private-boundary": "node scripts/check-private-boundary.mjs",
     "demo": "pnpm run build && node dist/src/demo.js",
     "lint": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/src/server.js",
     "test": "node --test dist/tests/*.test.js",
-    "verify": "pnpm run check:private-boundary && pnpm run build && pnpm test"
+    "verify": "pnpm run check:private-boundary && pnpm run check:migrations && pnpm run build && pnpm test"
   },
   "devDependencies": {
     "@types/node": "26.1.0",

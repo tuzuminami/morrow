@@ -32,6 +32,14 @@ test("TEST-CONTRACT-002 deletion request JSON schema is valid JSON and idempoten
   assert.ok(schema.required.includes("idempotencyKey"));
 });
 
+test("TEST-MIGRATION-001 rollback migration is present for package consumers", () => {
+  const rollback = readFileSync("migrations/001_initial.down.sql", "utf8");
+
+  assert.match(rollback, /DROP TABLE IF EXISTS memories/);
+  assert.match(rollback, /DROP TABLE IF EXISTS idempotency_keys/);
+  assert.match(rollback, /DROP TABLE IF EXISTS audit_events/);
+});
+
 test("TEST-BOUNDARY-001 public docs do not contain private control markers", () => {
   for (const file of ["README.md", "CHANGELOG.md", "SECURITY.md", "CONTRIBUTING.md", "openapi/openapi.yaml"]) {
     const content = readFileSync(file, "utf8");
@@ -48,6 +56,8 @@ test("TEST-PACKAGE-001 package dry-run excludes private and out-of-scope runtime
   const files = pack.flatMap((item: PackManifest) => item.files.map((file: { readonly path: string }) => file.path));
 
   assert.ok(files.length > 0);
+  assert.ok(files.includes("migrations/001_initial.sql"));
+  assert.ok(files.includes("migrations/001_initial.down.sql"));
   for (const file of files) {
     assert.equal(privateMarkers.some((marker) => file.includes(marker)), false, `${file} contains a private marker`);
     assert.equal(/(^|\/)(README_PRIVATE|AGENTS_PRIVATE|CODEX_IMPLEMENTATION_HARNESS|CODEX_AI_COMPANION)/.test(file), false);

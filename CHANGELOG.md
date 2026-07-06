@@ -10,11 +10,16 @@
 - Dependency-free PostgreSQL memory-store foundation with explicit SQL
   transaction provider, tenant-scoped query predicates, and audit writes.
 - Deletion-request JSON Schema and PostgreSQL migration table.
+- PostgreSQL rollback migration and migration contract check in `pnpm run verify`.
 
 ### Changed
 
 - OpenAPI contract now covers deletion requests, subject export, and revoke
   request bodies.
+- PostgreSQL memory inserts now enforce idempotency-key reuse with request-hash
+  conflict detection.
+- Docker Compose now mounts only the up migration during database initialization.
+- Private-boundary checks now include untracked, non-ignored files.
 - Package version updated to `0.2.0`.
 
 ### Known Limitations

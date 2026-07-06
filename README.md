@@ -23,8 +23,8 @@ This is a v0.2 OSS preview. It includes:
 - append-only audit events with actor, reason, and correlation ID
 - dependency-free PostgreSQL transaction and memory-store ports that can be
   wired to `pg.Pool` without importing provider SDKs into the domain layer
-- OpenAPI 3.1 draft, JSON Schema, PostgreSQL migration, Docker Compose, CI, and
-  repository private-boundary guard
+- OpenAPI 3.1 draft, JSON Schema, PostgreSQL up/down migrations, Docker
+  Compose, CI, and repository private-boundary guard
 
 The current executable API uses an in-memory adapter for deterministic tests and
 local demos. The PostgreSQL storage foundation is available as a port and
@@ -48,7 +48,10 @@ For the PostgreSQL schema preview:
 docker compose up
 ```
 
-The compose file initializes PostgreSQL with the migration under `migrations/`.
+The compose file initializes PostgreSQL with `migrations/001_initial.sql`.
+Rollback SQL is kept in `migrations/001_initial.down.sql`, and
+`pnpm run verify` checks that the migration pair preserves the tenant/type query
+boundary and idempotency table contract.
 
 ## Public API Direction
 
@@ -87,8 +90,10 @@ pnpm start
 - Conflicting idempotency-key reuse fails closed.
 - Revocation clears retrievable content and records audit evidence.
 - Deletion requests revoke retrievable content and are idempotent.
-- SQL storage queries include tenant, subject, purpose, policy, status, and TTL
-  predicates at the database boundary.
+- SQL storage queries include tenant, subject, type, purpose, policy, status,
+  and TTL predicates at the database boundary.
+- PostgreSQL migrations include a rollback file and an idempotency-key table
+  scoped by tenant and actor.
 - Private operator material and private requirement documents are blocked by
   `.gitignore`, `.dockerignore`, `.npmignore`, and `scripts/check-private-boundary.mjs`.
 

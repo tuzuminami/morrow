@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { MorrowError } from "../errors.js";
 import type {
   MemoryAuditEvent,
   MemoryRecord,
@@ -63,6 +64,27 @@ export class PostgresMemoryStore {
   async insertMemoryWithAudit(context: MemoryTenantContext, input: RegisterMemoryInput, retentionExpiresAt: Date): Promise<MemoryRecord> {
     return this.tx.transaction(async (client) => {
       const now = this.clock.now().toISOString();
+      const requestHash = memoryWriteRequestHash(input);
+      const existingIdempotency = await client.query<IdempotencyRow>(
+        `SELECT resource_id, request_hash
+        FROM idempotency_keys
+        WHERE tenant_id = $1
+          AND actor_id = $2
+          AND idempotency_key = $3`,
+        [context.tenantId, context.actorId, input.idempotencyKey]
+      );
+      const existing = existingIdempotency.rows[0];
+      if (existing !== undefined) {
+        if (existing.request_hash !== requestHash) {
+          throw new MorrowError("VERSION_CONFLICT", "Idempotency key conflicts with a previous request.");
+        }
+        const memory = await this.selectMemoryById(client, context, existing.resource_id);
+        if (memory === undefined) {
+          throw new MorrowError("VERSION_CONFLICT", "Idempotency key points to a missing memory.");
+        }
+        return memory;
+      }
+
       const contentHash = await sha256Hex(input.content);
       const memory: MemoryRecord = {
         id: this.ids.nextId("mem"),
@@ -115,6 +137,21 @@ export class PostgresMemoryStore {
         ]
       );
 
+      await client.query(
+        `INSERT INTO idempotency_keys (
+          tenant_id, actor_id, idempotency_key, operation, request_hash, resource_id, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          context.tenantId,
+          context.actorId,
+          input.idempotencyKey,
+          "memory.write",
+          requestHash,
+          memory.id,
+          now
+        ]
+      );
+
       await this.appendAudit(client, context, {
         id: this.ids.nextId("audit"),
         tenantId: context.tenantId,
@@ -161,6 +198,21 @@ export class PostgresMemoryStore {
     return result.rows.map(memoryFromRow);
   }
 
+  private async selectMemoryById(client: SqlClient, context: MemoryTenantContext, memoryId: string): Promise<MemoryRecord | undefined> {
+    const result = await client.query<MemoryRow>(
+      `SELECT
+        id, tenant_id, subject_id, type, purpose, policy_ref, content, content_hash,
+        source, confidence, classification, retention_expires_at, status,
+        created_at, created_by, updated_at, version
+      FROM memories
+      WHERE tenant_id = $1
+        AND id = $2`,
+      [context.tenantId, memoryId]
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : memoryFromRow(row);
+  }
+
   private async appendAudit(client: SqlClient, context: MemoryTenantContext, event: MemoryAuditEvent): Promise<void> {
     await client.query(
       `INSERT INTO audit_events (
@@ -186,16 +238,24 @@ export class PostgresMemoryStore {
 export class ScriptedTransactionProvider implements SqlTransactionProvider {
   readonly queries: Array<{ readonly sql: string; readonly values: readonly unknown[] }> = [];
 
+  constructor(private readonly results: Array<SqlQueryResult<unknown>> = []) {}
+
   async transaction<T>(operation: (client: SqlClient) => Promise<T>): Promise<T> {
     const client: SqlClient = {
       query: async <Row = unknown>(sql: string, values: readonly unknown[] = []): Promise<SqlQueryResult<Row>> => {
         this.queries.push({ sql, values });
-        return { rows: [] };
+        const result = this.results.shift();
+        return (result ?? { rows: [] }) as SqlQueryResult<Row>;
       }
     };
 
     return operation(client);
   }
+}
+
+interface IdempotencyRow {
+  readonly resource_id: string;
+  readonly request_hash: string;
 }
 
 interface MemoryRow {
@@ -242,6 +302,21 @@ function memoryFromRow(row: MemoryRow): MemoryRecord {
 
 async function sha256Hex(value: string): Promise<string> {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function memoryWriteRequestHash(input: RegisterMemoryInput): string {
+  return createHash("sha256").update(JSON.stringify({
+    operation: "memory.write",
+    subjectId: input.subjectId,
+    type: input.type,
+    purpose: input.purpose,
+    policyRef: input.policyRef,
+    content: input.content,
+    sourceKind: input.source.kind,
+    sourceReference: input.source.reference,
+    confidence: input.confidence,
+    classification: input.classification
+  })).digest("hex");
 }
 
 function toIso(value: Date | string): string {

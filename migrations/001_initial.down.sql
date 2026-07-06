@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS outbox_events;
+DROP TABLE IF EXISTS audit_events;
+DROP INDEX IF EXISTS deletion_requests_scope_idx;
+DROP TABLE IF EXISTS deletion_requests;
+DROP TABLE IF EXISTS idempotency_keys;
+DROP INDEX IF EXISTS memories_scope_idx;
+DROP TABLE IF EXISTS memories;
+DROP TABLE IF EXISTS retention_rules;
+DROP TABLE IF EXISTS consent_receipts;
