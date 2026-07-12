@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 
 const up = readFileSync("migrations/001_initial.sql", "utf8");
 const down = readFileSync("migrations/001_initial.down.sql", "utf8");
+const runtime = readFileSync("migrations/002_postgres_runtime.sql", "utf8");
 
 const requiredTables = [
   "consent_receipts",
@@ -34,6 +35,16 @@ if (!/PRIMARY KEY \(tenant_id, actor_id, idempotency_key\)/i.test(up)) {
 
 if (!/DROP INDEX IF EXISTS memories_scope_idx/i.test(down)) {
   failures.push("rollback must drop memories_scope_idx");
+}
+
+for (const index of [
+  "consent_receipts_scope_v1_idx",
+  "audit_events_tenant_v1_idx",
+  "idempotency_keys_tenant_v1_idx"
+]) {
+  if (!new RegExp(`CREATE INDEX IF NOT EXISTS ${index}\\b`, "i").test(runtime)) {
+    failures.push(`missing V1 runtime index ${index}`);
+  }
 }
 
 if (failures.length > 0) {

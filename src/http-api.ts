@@ -1,18 +1,18 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import {
-  InMemoryMemoryEngine,
-  MorrowError,
-  RandomMemoryIds,
-  RealtimeMemoryClock,
   type DataClassification,
   type DeletionMode,
   type MemorySource,
   type MemoryTenantContext,
   type MemoryType
-} from "./index.js";
+} from "./memory-engine.js";
+import { MorrowError } from "./errors.js";
+import type { MorrowAuthenticator, MorrowPrincipal } from "./auth.js";
+import type { MemoryRuntime } from "./runtime/memory-runtime.js";
 
 export interface ApiServerOptions {
-  readonly engine?: InMemoryMemoryEngine;
+  readonly runtime: MemoryRuntime;
+  readonly authenticator?: MorrowAuthenticator;
 }
 
 export interface HttpDispatchRequest {
@@ -27,20 +27,28 @@ export interface HttpDispatchResponse {
   readonly body: unknown;
 }
 
-export function createMorrowApiServer(options: ApiServerOptions = {}): Server {
-  const engine = options.engine ?? new InMemoryMemoryEngine(new RealtimeMemoryClock(), new RandomMemoryIds());
+const MAX_REQUEST_BODY_BYTES = 1_048_576;
 
-  return createServer(async (request, response) => {
+export function createMorrowApiServer(options: ApiServerOptions): Server {
+  const server = createServer(async (request, response) => {
     try {
-      await routeRequest(engine, request, response);
+      await routeRequest(options.runtime, options.authenticator, request, response);
     } catch (error) {
       writeError(response, error, request.headers["x-correlation-id"]);
     }
   });
+  server.headersTimeout = 10_000;
+  server.requestTimeout = 30_000;
+  return server;
 }
 
-async function routeRequest(engine: InMemoryMemoryEngine, request: IncomingMessage, response: ServerResponse): Promise<void> {
-  const result = await dispatchMorrowHttpRequest(engine, {
+async function routeRequest(
+  runtime: MemoryRuntime,
+  authenticator: MorrowAuthenticator | undefined,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  const result = await dispatchMorrowHttpRequest(runtime, authenticator, {
     method: request.method ?? "GET",
     path: request.url ?? "/",
     headers: normalizeHeaders(request.headers),
@@ -50,18 +58,23 @@ async function routeRequest(engine: InMemoryMemoryEngine, request: IncomingMessa
 }
 
 export async function dispatchMorrowHttpRequest(
-  engine: InMemoryMemoryEngine,
+  runtime: MemoryRuntime,
+  authenticator: MorrowAuthenticator | undefined,
   request: HttpDispatchRequest
 ): Promise<HttpDispatchResponse> {
   try {
-    return await dispatchMorrowHttpRequestUnsafe(engine, request);
+    if (Buffer.byteLength(request.bodyText ?? "", "utf8") > MAX_REQUEST_BODY_BYTES) {
+      throw new MorrowError("PAYLOAD_TOO_LARGE", "Request body exceeds the 1 MiB limit.");
+    }
+    return await dispatchMorrowHttpRequestUnsafe(runtime, authenticator, request);
   } catch (error) {
     return errorResponse(error, request.headers["x-correlation-id"]);
   }
 }
 
 async function dispatchMorrowHttpRequestUnsafe(
-  engine: InMemoryMemoryEngine,
+  runtime: MemoryRuntime,
+  authenticator: MorrowAuthenticator | undefined,
   request: HttpDispatchRequest
 ): Promise<HttpDispatchResponse> {
   const url = new URL(request.path, "http://localhost");
@@ -71,11 +84,11 @@ async function dispatchMorrowHttpRequestUnsafe(
     return json(200, { data: { status: "ok" }, meta: meta(correlationId) });
   }
 
-  const context = contextFromHeaders(request.headers);
+  const context = await contextFromHeaders(authenticator, request.headers);
 
   if (request.method === "POST" && url.pathname === "/v1/retention-rules") {
     const body = readJsonText(request.bodyText);
-    const data = engine.upsertRetentionRule(context, {
+    const data = await runtime.upsertRetentionRule(context, {
       memoryType: requireMemoryType(body.memoryType),
       purpose: requireString(body.purpose),
       ttlDays: requireNumber(body.ttlDays),
@@ -86,7 +99,7 @@ async function dispatchMorrowHttpRequestUnsafe(
 
   if (request.method === "POST" && url.pathname === "/v1/consent-receipts") {
     const body = readJsonText(request.bodyText);
-    const data = engine.registerConsent(context, {
+    const data = await runtime.registerConsent(context, {
       subjectId: requireString(body.subjectId),
       purpose: requireString(body.purpose),
       scope: requireMemoryTypeArray(body.scope),
@@ -97,7 +110,7 @@ async function dispatchMorrowHttpRequestUnsafe(
 
   if (request.method === "POST" && url.pathname === "/v1/memories") {
     const body = readJsonText(request.bodyText);
-    const data = engine.registerMemory(context, {
+    const data = await runtime.registerMemory(context, {
       subjectId: requireString(body.subjectId),
       type: requireMemoryType(body.type),
       purpose: requireString(body.purpose),
@@ -114,7 +127,7 @@ async function dispatchMorrowHttpRequestUnsafe(
   if (request.method === "POST" && url.pathname === "/v1/memories/query") {
     const body = readJsonText(request.bodyText);
     const data = {
-      memories: engine.queryMemories(context, {
+      memories: await runtime.queryMemories(context, {
         subjectId: requireString(body.subjectId),
         type: requireMemoryType(body.type),
         purpose: requireString(body.purpose),
@@ -131,7 +144,7 @@ async function dispatchMorrowHttpRequestUnsafe(
     if (memoryId === undefined) {
       throw new MorrowError("VALIDATION_FAILED", "memoryId is required.");
     }
-    const data = engine.revokeMemory(context, {
+    const data = await runtime.revokeMemory(context, {
       memoryId,
       reason: requireString(body.reason),
       idempotencyKey: requiredHeader(request.headers, "idempotency-key")
@@ -141,7 +154,7 @@ async function dispatchMorrowHttpRequestUnsafe(
 
   if (request.method === "POST" && url.pathname === "/v1/deletion-requests") {
     const body = readJsonText(request.bodyText);
-    const data = engine.createDeletionRequest(context, {
+    const data = await runtime.createDeletionRequest(context, {
       memoryId: requireString(body.memoryId),
       reason: requireString(body.reason),
       idempotencyKey: requiredHeader(request.headers, "idempotency-key")
@@ -155,7 +168,7 @@ async function dispatchMorrowHttpRequestUnsafe(
     if (subjectId === undefined) {
       throw new MorrowError("VALIDATION_FAILED", "subjectId is required.");
     }
-    const data = { memories: engine.exportSubject(context, decodeURIComponent(subjectId)) };
+    const data = { memories: await runtime.exportSubject(context, decodeURIComponent(subjectId)) };
     return json(200, { data, meta: meta(context.correlationId) });
   }
 
@@ -169,36 +182,70 @@ async function dispatchMorrowHttpRequestUnsafe(
   });
 }
 
-function contextFromHeaders(headers: Record<string, string | undefined>): MemoryTenantContext {
-  const authorization = headers.authorization;
-  if (authorization === undefined || !authorization.startsWith("Bearer ")) {
-    throw new MorrowError("AUTHENTICATION_REQUIRED", "Authentication is required.");
-  }
-  const tenantId = requiredHeader(headers, "x-tenant-id");
-  const actorId = authorization.slice("Bearer ".length).trim();
-  if (actorId.length === 0) {
-    throw new MorrowError("AUTHENTICATION_REQUIRED", "Authentication is required.");
+async function contextFromHeaders(
+  authenticator: MorrowAuthenticator | undefined,
+  headers: Record<string, string | undefined>
+): Promise<MemoryTenantContext> {
+  const principal = await authenticate(authenticator, headers.authorization);
+  const headerTenantId = headers["x-tenant-id"];
+  if (headerTenantId !== undefined && headerTenantId !== principal.tenantId) {
+    throw new MorrowError("TENANT_SCOPE_DENIED", "Request tenant does not match authenticated principal.");
   }
   return {
-    tenantId,
-    actorId,
-    scopes: scopesFromHeader(headers),
+    tenantId: principal.tenantId,
+    actorId: principal.actorId,
+    scopes: principal.scopes,
     correlationId: headers["x-correlation-id"] ?? `corr_${Date.now()}`
   };
 }
 
-function scopesFromHeader(headers: Record<string, string | undefined>): readonly string[] {
-  const raw = headers["x-morrow-scopes"];
-  if (raw === undefined) {
-    return [];
+async function authenticate(
+  authenticator: MorrowAuthenticator | undefined,
+  authorization: string | undefined
+): Promise<MorrowPrincipal> {
+  if (authenticator === undefined) {
+    throw new MorrowError("AUTHENTICATION_REQUIRED", "Authentication is required.");
   }
-  return raw.split(" ").map((scope) => scope.trim()).filter(Boolean);
+  try {
+    const principal = await authenticator.authenticate(authorization);
+    if (principal === undefined) {
+      throw new MorrowError("AUTHENTICATION_REQUIRED", "Authentication is required.");
+    }
+    return validatePrincipal(principal);
+  } catch (error) {
+    if (error instanceof MorrowError) {
+      throw error;
+    }
+    throw new MorrowError("AUTHENTICATION_REQUIRED", "Authentication is required.");
+  }
+}
+
+function validatePrincipal(principal: MorrowPrincipal): MorrowPrincipal {
+  if (
+    typeof principal.tenantId !== "string" || principal.tenantId.trim().length === 0 ||
+    typeof principal.actorId !== "string" || principal.actorId.trim().length === 0 ||
+    !Array.isArray(principal.scopes) ||
+    principal.scopes.some((scope) => typeof scope !== "string" || scope.trim().length === 0)
+  ) {
+    throw new MorrowError("AUTHENTICATION_REQUIRED", "Authentication principal is invalid.");
+  }
+  return {
+    tenantId: principal.tenantId,
+    actorId: principal.actorId,
+    scopes: [...principal.scopes]
+  };
 }
 
 async function readText(request: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
+  let totalBytes = 0;
   for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    totalBytes += buffer.length;
+    if (totalBytes > MAX_REQUEST_BODY_BYTES) {
+      throw new MorrowError("PAYLOAD_TOO_LARGE", "Request body exceeds the 1 MiB limit.");
+    }
+    chunks.push(buffer);
   }
   return Buffer.concat(chunks).toString("utf8");
 }
@@ -266,6 +313,9 @@ function errorStatus(code: string): number {
   }
   if (code === "RESOURCE_NOT_FOUND") {
     return 404;
+  }
+  if (code === "PAYLOAD_TOO_LARGE") {
+    return 413;
   }
   return 422;
 }

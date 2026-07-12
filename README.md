@@ -61,7 +61,7 @@ and adapter-ready architecture come before UI or provider integrations.
 
 ## Status
 
-This is a v0.2 OSS preview. It includes:
+MORROW V1.0.0 is a PostgreSQL-backed consent-aware memory runtime. It includes:
 
 - typed memory registration for `episodic`, `fact`, `preference`,
   `relationship`, and `instruction`
@@ -71,15 +71,13 @@ This is a v0.2 OSS preview. It includes:
 - idempotent memory writes and revocations
 - deletion-request and subject-export HTTP routes
 - append-only audit events with actor, reason, and correlation ID
-- dependency-free PostgreSQL transaction and memory-store ports that can be
-  wired to `pg.Pool` without importing provider SDKs into the domain layer
-- OpenAPI 3.1 draft, JSON Schema, PostgreSQL up/down migrations, Docker
-  Compose, CI, and repository private-boundary guard
-
-The current executable API uses an in-memory adapter for deterministic tests and
-local demos. The PostgreSQL storage foundation is available as a port and
-transaction provider; production wiring is intentionally kept outside the domain
-core.
+- PostgreSQL runtime for the complete public API, with transaction-scoped
+  idempotency and audit writes
+- migration runner with a checksum ledger and startup readiness check
+- an explicit authenticator port; verified identity is the only source of
+  tenant, actor, and scope authority
+- OpenAPI 3.1 contract, JSON Schema, Docker Compose, CI with PostgreSQL E2E,
+  and a repository private-boundary guard
 
 ## Quick Start
 
@@ -92,20 +90,32 @@ pnpm run demo
 `pnpm run demo` registers retention, consent, and one synthetic memory, then
 queries it under the same tenant and purpose.
 
-For the PostgreSQL schema preview:
+For a local PostgreSQL database, set a non-committed password and start the
+database:
 
 ```bash
+export MORROW_POSTGRES_PASSWORD='choose-a-local-dev-password'
 docker compose up
 ```
 
-The compose file initializes PostgreSQL with `migrations/001_initial.sql`.
-Rollback SQL is kept in `migrations/001_initial.down.sql`, and
-`pnpm run verify` checks that the migration pair preserves the tenant/type query
-boundary and idempotency table contract.
+Then apply the forward-only migrations:
+
+```bash
+export MORROW_DATABASE_URL='postgresql://morrow:choose-a-local-dev-password@localhost:54329/morrow'
+pnpm run db:migrate
+```
+
+MORROW records every applied migration with a SHA-256 checksum. The server will
+refuse to start when a migration is missing or has changed after application.
+`001_initial.down.sql` remains a development recovery aid; production rollbacks
+should use a new forward migration rather than editing applied history.
+V1 creates a fresh database only: an existing pre-ledger schema is rejected
+rather than being silently stamped as compatible. Export or archive that data,
+then initialize a fresh V1 database before migration.
 
 ## Public API Direction
 
-The draft OpenAPI contract lives in `openapi/openapi.yaml` and currently covers:
+The OpenAPI 3.1 contract lives in `openapi/openapi.yaml` and covers:
 
 - `POST /v1/consent-receipts`
 - `POST /v1/retention-rules`
@@ -115,8 +125,8 @@ The draft OpenAPI contract lives in `openapi/openapi.yaml` and currently covers:
 - `POST /v1/deletion-requests`
 - `GET /v1/subjects/{subjectId}/export`
 
-The package exports the in-memory engine, domain types, typed errors, HTTP
-dispatch utilities, and storage ports from `src/index.ts`.
+The package exports the domain engine, async runtime port, PostgreSQL runtime,
+HTTP dispatch utilities, typed errors, and storage ports from `src/index.ts`.
 
 MORROW does not implement Persona Contract compilation, relationship scoring,
 scenario orchestration, LLM provider routing, policy PDP behavior, or an
@@ -124,15 +134,43 @@ evaluation harness. Persona-like and relationship-like facts can be stored as
 typed memory data when the same consent, retention, tenant, and policy
 constraints allow it.
 
-To run the dependency-free API locally:
+To run the server, provide an external ES module that exports a verified
+`authenticator`. The module must map an `Authorization` value to a trusted
+tenant ID, actor ID, and scopes; MORROW deliberately does not ship a fake
+header-to-identity adapter.
+
+```js
+// ./local-auth.mjs -- development example only; do not commit real credentials.
+export const authenticator = {
+  async authenticate(authorization) {
+    if (authorization !== process.env.MORROW_DEV_BEARER) return undefined;
+    return {
+      tenantId: "tenant_local",
+      actorId: "developer_local",
+      scopes: ["retention:write", "consent:write", "memory:write", "memory:read", "memory:delete", "memory:export"]
+    };
+  }
+};
+```
+
+Start it only after `pnpm run db:migrate` succeeds:
 
 ```bash
+export MORROW_AUTH_MODULE=./local-auth.mjs
 pnpm start
 ```
+
+`X-Tenant-Id` is only an optional assertion: a different value is rejected and
+an absent value never selects a tenant. `X-Morrow-Scopes` is not recognized.
+The server binds to loopback by default. To bind a non-loopback `HOST`, run it
+behind a trusted TLS terminator and set `MORROW_TLS_TERMINATED=true`; direct
+plain-HTTP bearer-token exposure is intentionally rejected.
 
 ## Safety Properties
 
 - Missing consent fails closed before memory persistence.
+- Missing, invalid, or failing authentication fails closed before every
+  protected operation.
 - Wrong-tenant retrieval and subject export return no cross-tenant data.
 - Wrong-tenant mutation is denied.
 - Expired retention removes memories from retrieval and export.
@@ -142,21 +180,24 @@ pnpm start
 - Deletion requests revoke retrievable content and are idempotent.
 - SQL storage queries include tenant, subject, type, purpose, policy, status,
   and TTL predicates at the database boundary.
-- PostgreSQL migrations include a rollback file and an idempotency-key table
-  scoped by tenant and actor.
+- PostgreSQL migrations are checksum-verified and protected by an advisory lock;
+  the server refuses stale schema state.
+- Requests are limited to 1 MiB. Queries return at most 100 memories; subject
+  exports over 1,000 active memories fail explicitly until cursor/stream export
+  support is introduced.
 - Private operator material and private requirement documents are blocked by
   `.gitignore`, `.dockerignore`, `.npmignore`, and `scripts/check-private-boundary.mjs`.
 
-## Limitations
+## Boundaries
 
-- Authentication is a development header adapter, not a production identity
-  provider integration.
-- The packaged runtime still defaults to in-memory storage. The PostgreSQL port
-  is driver-compatible, but this release does not bundle the `pg` dependency.
-- Vector search, plugin host runtime, workers, SDK, and CLI are planned
-  follow-up slices.
-- Strict TypeScript build is enabled, with JavaScript and declaration output
-  emitted under `dist/`.
+- MORROW supplies the consent-aware memory decision and persistence boundary;
+  callers supply verified identity through `MorrowAuthenticator`.
+- Vector search, plugin host runtime, background workers, and SDKs are
+  intentionally outside V1. The packaged `morrow-migrate` and `morrow-server`
+  commands cover database migration and server startup only.
+- The in-memory runtime remains available for deterministic unit tests and
+  embedded evaluation, while the executable server uses PostgreSQL only.
+- Strict TypeScript emits JavaScript and declarations under `dist/`.
 
 ## License
 

@@ -1,7 +1,7 @@
 {
   "name": "@tuzuminami/morrow",
-  "version": "0.2.0",
-  "description": "Standalone consent-aware memory engine foundations.",
+  "version": "1.0.0",
+  "description": "Consent-aware, PostgreSQL-backed memory runtime for AI applications.",
   "type": "module",
   "license": "Apache-2.0",
   "main": "./dist/src/index.js",
@@ -12,6 +12,10 @@
       "import": "./dist/src/index.js"
     }
   },
+  "bin": {
+    "morrow-migrate": "./dist/src/migrate.js",
+    "morrow-server": "./dist/src/server.js"
+  },
   "files": [
     "CHANGELOG.md",
     "contracts",
@@ -19,20 +23,30 @@
     "migrations",
     "openapi",
     "README.md",
+    "SECURITY.md",
     "LICENSE"
   ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "node scripts/build.mjs",
     "check:migrations": "node scripts/check-migrations.mjs",
     "check:private-boundary": "node scripts/check-private-boundary.mjs",
+    "db:migrate": "pnpm run build && node dist/src/migrate.js",
     "demo": "pnpm run build && node dist/src/demo.js",
     "lint": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/src/server.js",
     "test": "node --test dist/tests/*.test.js",
-    "verify": "pnpm run check:private-boundary && pnpm run check:migrations && pnpm run build && pnpm test"
+    "test:e2e": "test -n \"$MORROW_TEST_DATABASE_URL\" && pnpm run build && node --test dist/tests/postgres-http-e2e.test.js",
+    "verify": "pnpm run check:private-boundary && pnpm run check:migrations && pnpm run build && pnpm test && pnpm pack --dry-run --json"
   },
   "devDependencies": {
     "@types/node": "26.1.0",
+    "@types/pg": "8.20.0",
     "typescript": "5.9.2"
+  },
+  "dependencies": {
+    "pg": "8.22.0"
   }
 }

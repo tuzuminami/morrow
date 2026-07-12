@@ -1,12 +1,22 @@
 openapi: 3.1.0
 info:
   title: MORROW API
-  version: 0.2.0
+  version: 1.0.0
   license:
     name: Apache-2.0
+    identifier: Apache-2.0
+servers:
+  - url: "{protocol}://{host}"
+    description: Configured MORROW server after database migration and authenticator configuration.
+    variables:
+      protocol:
+        default: https
+      host:
+        default: morrow.local
 paths:
   /v1/retention-rules:
     post:
+      operationId: upsertRetentionRule
       summary: Upsert a tenant-scoped retention rule for a memory type and purpose.
       security:
         - bearerAuth: []
@@ -26,12 +36,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Envelope"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Error"
         "422":
           $ref: "#/components/responses/Error"
   /v1/consent-receipts:
     post:
+      operationId: registerConsentReceipt
       summary: Register consent for a subject and purpose.
       security:
         - bearerAuth: []
@@ -51,12 +64,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Envelope"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Error"
         "422":
           $ref: "#/components/responses/Error"
   /v1/memories:
     post:
+      operationId: registerMemory
       summary: Store a typed memory when consent and retention permit it.
       security:
         - bearerAuth: []
@@ -77,6 +93,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Envelope"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Error"
         "409":
@@ -85,7 +103,8 @@ paths:
           $ref: "#/components/responses/Error"
   /v1/memories/query:
     post:
-      summary: Query active memories by tenant, subject, type, purpose, and policy reference.
+      operationId: queryMemories
+      summary: Query up to 100 active memories by tenant, subject, type, purpose, and policy reference.
       security:
         - bearerAuth: []
       parameters:
@@ -104,10 +123,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Envelope"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/ResultLimitExceeded"
   /v1/memories/{memoryId}/revoke:
     post:
+      operationId: revokeMemory
       summary: Revoke a memory and remove retrievable content.
       security:
         - bearerAuth: []
@@ -133,10 +157,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Envelope"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Error"
   /v1/deletion-requests:
     post:
+      operationId: createDeletionRequest
       summary: Create an idempotent deletion request and revoke retrievable content.
       security:
         - bearerAuth: []
@@ -157,13 +184,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Envelope"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Error"
         "422":
           $ref: "#/components/responses/Error"
   /v1/subjects/{subjectId}/export:
     get:
-      summary: Export active, unexpired memories for a subject within the authenticated tenant.
+      operationId: exportSubjectMemories
+      summary: Export up to 1000 active, unexpired memories for a subject within the authenticated tenant.
       security:
         - bearerAuth: []
       parameters:
@@ -181,8 +211,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Envelope"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/ResultLimitExceeded"
 components:
   securitySchemes:
     bearerAuth:
@@ -192,7 +226,8 @@ components:
     TenantId:
       name: X-Tenant-Id
       in: header
-      required: true
+      required: false
+      description: Optional assertion checked against the authenticated tenant. It never selects a tenant.
       schema:
         type: string
     CorrelationId:
@@ -208,6 +243,18 @@ components:
       schema:
         type: string
   responses:
+    Unauthenticated:
+      description: Authentication is missing, invalid, or failed closed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    ResultLimitExceeded:
+      description: Request body or result set exceeds a V1 safety limit.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
     Error:
       description: Stable error envelope.
       content:

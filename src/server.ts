@@ -1,8 +1,76 @@
+#!/usr/bin/env node
+
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+
+import { assertDatabaseReady } from "./database-migrations.js";
 import { createMorrowApiServer } from "./http-api.js";
+import { RandomMemoryIds, RealtimeMemoryClock } from "./memory-engine.js";
+import { packageMigrationsDirectory } from "./migration-path.js";
+import { createPostgresMemoryRuntime } from "./storage/postgres-pool.js";
+import type { MorrowAuthenticator } from "./auth.js";
 
-const port = Number.parseInt(process.env.PORT ?? "3000", 10);
-const server = createMorrowApiServer();
+const connectionString = requiredEnvironment("MORROW_DATABASE_URL");
+const authModule = requiredEnvironment("MORROW_AUTH_MODULE");
+const port = parsePort(process.env.PORT ?? "3000");
+const host = process.env.HOST ?? "127.0.0.1";
+if (!isLoopbackHost(host) && process.env.MORROW_TLS_TERMINATED !== "true") {
+  throw new Error("Non-loopback HOST requires MORROW_TLS_TERMINATED=true behind a trusted TLS terminator.");
+}
+const { pool, runtime } = createPostgresMemoryRuntime({ connectionString }, new RandomMemoryIds(), new RealtimeMemoryClock());
+const authenticator = await loadAuthenticator(authModule);
+await assertDatabaseReady(pool, packageMigrationsDirectory());
+const server = createMorrowApiServer({ runtime, authenticator });
 
-server.listen(port, "0.0.0.0", () => {
-  console.log(JSON.stringify({ event: "morrow.api.started", port }));
+server.listen(port, host, () => {
+  console.log(JSON.stringify({ event: "morrow.api.started", host, port }));
 });
+
+let closing = false;
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, () => {
+    if (closing) {
+      return;
+    }
+    closing = true;
+    server.close(() => {
+      void pool.end().finally(() => process.exit(0));
+    });
+  });
+}
+
+function requiredEnvironment(name: string): string {
+  const value = process.env[name];
+  if (value === undefined || value.trim().length === 0) {
+    throw new Error(`${name} is required.`);
+  }
+  return value;
+}
+
+function parsePort(value: string): number {
+  const port = Number.parseInt(value, 10);
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new Error("PORT must be a valid TCP port.");
+  }
+  return port;
+}
+
+function isLoopbackHost(host: string): boolean {
+  return host === "127.0.0.1" || host === "::1" || host === "localhost";
+}
+
+async function loadAuthenticator(modulePath: string): Promise<MorrowAuthenticator> {
+  const moduleUrl = modulePath.startsWith("file:")
+    ? modulePath
+    : pathToFileURL(resolve(process.cwd(), modulePath)).href;
+  const loaded: unknown = await import(moduleUrl);
+  if (typeof loaded !== "object" || loaded === null || !("authenticator" in loaded)) {
+    throw new Error("MORROW_AUTH_MODULE must export an authenticator.");
+  }
+  const authenticator = (loaded as { readonly authenticator?: unknown }).authenticator;
+  if (typeof authenticator !== "object" || authenticator === null || !("authenticate" in authenticator) ||
+      typeof (authenticator as { readonly authenticate?: unknown }).authenticate !== "function") {
+    throw new Error("MORROW_AUTH_MODULE authenticator must provide authenticate(authorization).");
+  }
+  return authenticator as MorrowAuthenticator;
+}

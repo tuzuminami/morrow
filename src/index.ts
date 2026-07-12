@@ -1,5 +1,21 @@
 export { MorrowError, isMorrowError, type ErrorCode } from "./errors.js";
 export {
+  assertDatabaseReady,
+  loadDatabaseMigrations,
+  migrateDatabase,
+  type DatabaseMigration
+} from "./database-migrations.js";
+export { packageMigrationsDirectory } from "./migration-path.js";
+export {
+  InMemoryMemoryRuntime,
+  type MemoryRuntime
+} from "./runtime/memory-runtime.js";
+export { PostgresMemoryRuntime } from "./runtime/postgres-memory-runtime.js";
+export {
+  type MorrowAuthenticator,
+  type MorrowPrincipal
+} from "./auth.js";
+export {
   InMemoryMemoryEngine,
   RandomMemoryIds,
   RealtimeMemoryClock,
@@ -41,3 +57,8 @@ export {
   type SqlQueryResult,
   type SqlTransactionProvider
 } from "./storage/postgres-memory-store.js";
+export {
+  createPostgresMemoryRuntime,
+  createPostgresMemoryStore,
+  type PostgresPoolOptions
+} from "./storage/postgres-pool.js";
