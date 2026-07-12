@@ -1,6 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { InMemoryMemoryEngine, RandomMemoryIds, RealtimeMemoryClock, dispatchMorrowHttpRequest } from "../src/index.js";
+import {
+  InMemoryMemoryEngine,
+  InMemoryMemoryRuntime,
+  RandomMemoryIds,
+  RealtimeMemoryClock,
+  dispatchMorrowHttpRequest,
+  type MemoryRuntime,
+  type MorrowAuthenticator
+} from "../src/index.js";
 
 const scopes = [
   "consent:write",
@@ -12,21 +20,21 @@ const scopes = [
 ].join(" ");
 
 test("TEST-API-001 HTTP primary flow stores and queries consent-scoped memory", async () => {
-  const engine = createEngine();
+  const runtime = createRuntime();
 
-  await post(engine, "/v1/retention-rules", {
+  await post(runtime, "/v1/retention-rules", {
     memoryType: "preference",
     purpose: "assistant_personalization",
     ttlDays: 30,
     deletionMode: "soft_delete"
   });
-  await post(engine, "/v1/consent-receipts", {
+  await post(runtime, "/v1/consent-receipts", {
     subjectId: "subject_api",
     purpose: "assistant_personalization",
     scope: ["preference"],
     expiresAt: "2099-01-01T00:00:00.000Z"
   });
-  const createResponse = await post(engine, "/v1/memories", {
+  const createResponse = await post(runtime, "/v1/memories", {
     subjectId: "subject_api",
     type: "preference",
     purpose: "assistant_personalization",
@@ -39,7 +47,7 @@ test("TEST-API-001 HTTP primary flow stores and queries consent-scoped memory", 
 
   assert.equal(createResponse.statusCode, 200);
 
-  const queryResponse = await post(engine, "/v1/memories/query", {
+  const queryResponse = await post(runtime, "/v1/memories/query", {
     subjectId: "subject_api",
     type: "preference",
     purpose: "assistant_personalization",
@@ -54,20 +62,20 @@ test("TEST-API-001 HTTP primary flow stores and queries consent-scoped memory", 
 });
 
 test("TEST-API-006 deletion request and subject export complete the public API flow", async () => {
-  const engine = createEngine();
-  await post(engine, "/v1/retention-rules", {
+  const runtime = createRuntime();
+  await post(runtime, "/v1/retention-rules", {
     memoryType: "preference",
     purpose: "assistant_personalization",
     ttlDays: 30,
     deletionMode: "soft_delete"
   });
-  await post(engine, "/v1/consent-receipts", {
+  await post(runtime, "/v1/consent-receipts", {
     subjectId: "subject_api",
     purpose: "assistant_personalization",
     scope: ["preference"],
     expiresAt: "2099-01-01T00:00:00.000Z"
   });
-  const createResponse = await post(engine, "/v1/memories", {
+  const createResponse = await post(runtime, "/v1/memories", {
     subjectId: "subject_api",
     type: "preference",
     purpose: "assistant_personalization",
@@ -79,7 +87,7 @@ test("TEST-API-006 deletion request and subject export complete the public API f
   }, "idem-api-export");
   const created = createResponse.body as { readonly data: { readonly id: string } };
 
-  const exportBefore = await dispatchMorrowHttpRequest(engine, {
+  const exportBefore = await dispatchMorrowHttpRequest(runtime, authenticated(), {
     method: "GET",
     path: "/v1/subjects/subject_api/export",
     headers: authorizedHeaders()
@@ -87,14 +95,14 @@ test("TEST-API-006 deletion request and subject export complete the public API f
   const exportBeforeBody = exportBefore.body as { readonly data: { readonly memories: readonly unknown[] } };
   assert.equal(exportBeforeBody.data.memories.length, 1);
 
-  const deleteResponse = await post(engine, "/v1/deletion-requests", {
+  const deleteResponse = await post(runtime, "/v1/deletion-requests", {
     memoryId: created.data.id,
     reason: "subject-request"
   }, "idem-api-delete");
 
   assert.equal(deleteResponse.statusCode, 200);
 
-  const exportAfter = await dispatchMorrowHttpRequest(engine, {
+  const exportAfter = await dispatchMorrowHttpRequest(runtime, authenticated(), {
     method: "GET",
     path: "/v1/subjects/subject_api/export",
     headers: authorizedHeaders()
@@ -103,8 +111,8 @@ test("TEST-API-006 deletion request and subject export complete the public API f
   assert.equal(exportAfterBody.data.memories.length, 0);
 });
 
-test("TEST-API-002 HTTP rejects missing authorization before state change", async () => {
-  const response = await dispatchMorrowHttpRequest(createEngine(), {
+test("TEST-API-002 HTTP rejects an invalid principal before state change", async () => {
+  const response = await dispatchMorrowHttpRequest(createRuntime(), authenticated(undefined), {
     method: "POST",
     path: "/v1/retention-rules",
     headers: {
@@ -124,8 +132,8 @@ test("TEST-API-002 HTTP rejects missing authorization before state change", asyn
   assert.equal(body.error.code, "AUTHENTICATION_REQUIRED");
 });
 
-test("TEST-API-003 health check is public and does not require tenant headers", async () => {
-  const response = await dispatchMorrowHttpRequest(createEngine(), {
+test("TEST-API-003 health check is public and does not require authenticator", async () => {
+  const response = await dispatchMorrowHttpRequest(createRuntime(), undefined, {
     method: "GET",
     path: "/healthz",
     headers: {}
@@ -137,7 +145,7 @@ test("TEST-API-003 health check is public and does not require tenant headers", 
 });
 
 test("TEST-API-004 malformed JSON fails with stable validation error", async () => {
-  const response = await dispatchMorrowHttpRequest(createEngine(), {
+  const response = await dispatchMorrowHttpRequest(createRuntime(), authenticated(), {
     method: "POST",
     path: "/v1/retention-rules",
     headers: authorizedHeaders(),
@@ -150,7 +158,7 @@ test("TEST-API-004 malformed JSON fails with stable validation error", async () 
 });
 
 test("TEST-API-005 unsupported enum values are rejected before persistence", async () => {
-  const response = await post(createEngine(), "/v1/retention-rules", {
+  const response = await post(createRuntime(), "/v1/retention-rules", {
     memoryType: "unknown",
     purpose: "assistant_personalization",
     ttlDays: 30,
@@ -162,13 +170,101 @@ test("TEST-API-005 unsupported enum values are rejected before persistence", asy
   assert.equal(body.error.code, "VALIDATION_FAILED");
 });
 
+test("TEST-API-007 HTTP fails closed when no authenticator is configured", async () => {
+  const response = await dispatchMorrowHttpRequest(createRuntime(), undefined, {
+    method: "POST",
+    path: "/v1/retention-rules",
+    headers: authorizedHeaders(),
+    bodyText: JSON.stringify({
+      memoryType: "preference",
+      purpose: "assistant_personalization",
+      ttlDays: 30,
+      deletionMode: "soft_delete"
+    })
+  });
+
+  assert.equal(response.statusCode, 401);
+});
+
+test("TEST-API-008 HTTP fails closed when authentication throws", async () => {
+  const response = await dispatchMorrowHttpRequest(createRuntime(), {
+    async authenticate(): Promise<undefined> {
+      throw new Error("provider unavailable");
+    }
+  }, {
+    method: "POST",
+    path: "/v1/retention-rules",
+    headers: authorizedHeaders(),
+    bodyText: "{}"
+  });
+
+  assert.equal(response.statusCode, 401);
+});
+
+test("TEST-API-009 HTTP rejects a spoofed tenant header", async () => {
+  const response = await dispatchMorrowHttpRequest(createRuntime(), authenticated(), {
+    method: "POST",
+    path: "/v1/retention-rules",
+    headers: { ...authorizedHeaders(), "x-tenant-id": "tenant_spoofed" },
+    bodyText: "{}"
+  });
+
+  assert.equal(response.statusCode, 403);
+});
+
+test("TEST-API-010 HTTP does not accept scopes from request headers", async () => {
+  const response = await dispatchMorrowHttpRequest(createRuntime(), authenticated({ scopes: [] }), {
+    method: "POST",
+    path: "/v1/retention-rules",
+    headers: authorizedHeaders(),
+    bodyText: JSON.stringify({
+      memoryType: "preference",
+      purpose: "assistant_personalization",
+      ttlDays: 30,
+      deletionMode: "soft_delete"
+    })
+  });
+
+  assert.equal(response.statusCode, 403);
+});
+
+test("TEST-API-011 HTTP rejects malformed principals from an external authenticator", async () => {
+  const response = await dispatchMorrowHttpRequest(createRuntime(), {
+    async authenticate() {
+      return {
+        tenantId: "tenant_api",
+        actorId: "actor_api",
+        scopes: "memory:read"
+      } as unknown as { readonly tenantId: string; readonly actorId: string; readonly scopes: readonly string[] };
+    }
+  }, {
+    method: "POST",
+    path: "/v1/retention-rules",
+    headers: authorizedHeaders(),
+    bodyText: "{}"
+  });
+
+  assert.equal(response.statusCode, 401);
+});
+
+test("TEST-API-012 HTTP rejects oversized request bodies before authentication", async () => {
+  const response = await dispatchMorrowHttpRequest(createRuntime(), undefined, {
+    method: "POST",
+    path: "/v1/retention-rules",
+    headers: {},
+    bodyText: "x".repeat(1_048_577)
+  });
+
+  assert.equal(response.statusCode, 413);
+});
+
 async function post(
-  engine: InMemoryMemoryEngine,
+  runtime: MemoryRuntime,
   path: string,
   body: Record<string, unknown>,
   idempotencyKey = "idem-test"
 ) {
-  return dispatchMorrowHttpRequest(engine, {
+  return dispatchMorrowHttpRequest(runtime, authenticated(), {
     method: "POST",
     path,
     headers: authorizedHeaders(idempotencyKey),
@@ -187,6 +283,21 @@ function authorizedHeaders(idempotencyKey = "idem-test"): Record<string, string>
   };
 }
 
-function createEngine(): InMemoryMemoryEngine {
-  return new InMemoryMemoryEngine(new RealtimeMemoryClock(), new RandomMemoryIds());
+function authenticated(overrides: Partial<{ readonly scopes: readonly string[] }> = {}): MorrowAuthenticator {
+  return {
+    async authenticate(authorization): Promise<{ readonly tenantId: string; readonly actorId: string; readonly scopes: readonly string[] } | undefined> {
+      if (authorization !== "Bearer actor_api") {
+        return undefined;
+      }
+      return {
+        tenantId: "tenant_api",
+        actorId: "actor_api",
+        scopes: overrides.scopes ?? scopes.split(" ")
+      };
+    }
+  };
+}
+
+function createRuntime(): MemoryRuntime {
+  return new InMemoryMemoryRuntime(new InMemoryMemoryEngine(new RealtimeMemoryClock(), new RandomMemoryIds()));
 }

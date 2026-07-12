@@ -6,7 +6,8 @@ export type ErrorCode =
   | "RESOURCE_NOT_FOUND"
   | "PLUGIN_INCOMPATIBLE"
   | "CONSENT_REQUIRED"
-  | "CONFIGURATION_INVALID";
+  | "CONFIGURATION_INVALID"
+  | "PAYLOAD_TOO_LARGE";
 
 export class MorrowError extends Error {
   readonly code: ErrorCode;
