@@ -7,3 +7,7 @@ CREATE INDEX IF NOT EXISTS audit_events_tenant_v1_idx
 
 CREATE INDEX IF NOT EXISTS idempotency_keys_tenant_v1_idx
   ON idempotency_keys (tenant_id, actor_id, created_at);
+
+ALTER TABLE memories
+  ADD CONSTRAINT memories_content_size_v1_check
+  CHECK (octet_length(content) <= 16384);

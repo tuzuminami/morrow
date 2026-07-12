@@ -182,8 +182,8 @@ plain-HTTP bearer-token exposure is intentionally rejected.
   and TTL predicates at the database boundary.
 - PostgreSQL migrations are checksum-verified and protected by an advisory lock;
   the server refuses stale schema state.
-- Requests are limited to 1 MiB. Queries return at most 100 memories; subject
-  exports over 1,000 active memories fail explicitly until cursor/stream export
+- Requests are limited to 1 MiB and persisted memory content to 16 KiB. Queries
+  and subject exports return at most 100 memories; larger exports fail explicitly until cursor/stream export
   support is introduced.
 - Private operator material and private requirement documents are blocked by
   `.gitignore`, `.dockerignore`, `.npmignore`, and `scripts/check-private-boundary.mjs`.

@@ -19,6 +19,8 @@
   authenticator module. It refuses to start with missing migration state.
 - V1 refuses automatic adoption of an existing database without a migration
   ledger, preventing an unknown legacy schema from being stamped as compatible.
+- Memory content is capped at 16 KiB in the runtime and PostgreSQL schema;
+  query and export responses are bounded to protect shared-process availability.
 - Package metadata, OpenAPI version, and release gates are aligned to V1.0.0.
 
 ### Security

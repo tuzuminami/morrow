@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { MorrowError } from "../errors.js";
+import { MAX_MEMORY_CONTENT_BYTES } from "../memory-engine.js";
 import type {
   ConsentReceipt,
   DeletionRequest,
@@ -21,7 +22,7 @@ import type { SqlClient, SqlTransactionProvider } from "../storage/postgres-memo
 import type { MemoryRuntime } from "./memory-runtime.js";
 
 const MAX_QUERY_RESULTS = 100;
-const MAX_EXPORT_RESULTS = 1_000;
+const MAX_EXPORT_RESULTS = 100;
 
 interface MemoryRow {
   readonly id: string;
@@ -505,6 +506,12 @@ function validateMemoryInput(input: RegisterMemoryInput): void {
   assertNonEmpty(input.content, "content");
   assertNonEmpty(input.source.reference, "source.reference");
   assertNonEmpty(input.idempotencyKey, "idempotencyKey");
+  assertByteLength(input.content, MAX_MEMORY_CONTENT_BYTES, "content");
+  assertByteLength(input.source.reference, 2_048, "source.reference");
+  assertByteLength(input.policyRef, 512, "policyRef");
+  assertByteLength(input.purpose, 256, "purpose");
+  assertByteLength(input.subjectId, 256, "subjectId");
+  assertByteLength(input.idempotencyKey, 256, "idempotencyKey");
   if (!isMemoryType(input.type) || !["user_statement", "system_observation", "operator_import"].includes(input.source.kind)) {
     throw new MorrowError("VALIDATION_FAILED", "Unsupported memory type or source kind.");
   }
@@ -513,6 +520,12 @@ function validateMemoryInput(input: RegisterMemoryInput): void {
   }
   if (!["public", "internal", "sensitive"].includes(input.classification)) {
     throw new MorrowError("VALIDATION_FAILED", "Unsupported data classification.");
+  }
+}
+
+function assertByteLength(value: string, maximum: number, field: string): void {
+  if (Buffer.byteLength(value, "utf8") > maximum) {
+    throw new MorrowError("PAYLOAD_TOO_LARGE", `${field} exceeds the ${maximum}-byte limit.`);
   }
 }
 

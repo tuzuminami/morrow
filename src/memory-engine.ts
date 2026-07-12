@@ -5,6 +5,7 @@ export type MemoryType = "episodic" | "fact" | "preference" | "relationship" | "
 export type MemoryStatus = "active" | "revoked" | "expired" | "deleted";
 export type DataClassification = "public" | "internal" | "sensitive";
 export type DeletionMode = "soft_delete" | "hard_delete";
+export const MAX_MEMORY_CONTENT_BYTES = 16_384;
 
 export interface MemoryTenantContext {
   readonly tenantId: string;
@@ -474,8 +475,20 @@ function validateMemoryInput(input: RegisterMemoryInput): void {
   assertNonEmpty(input.content, "content");
   assertNonEmpty(input.source.reference, "source.reference");
   assertNonEmpty(input.idempotencyKey, "idempotencyKey");
+  assertByteLength(input.content, MAX_MEMORY_CONTENT_BYTES, "content");
+  assertByteLength(input.source.reference, 2_048, "source.reference");
+  assertByteLength(input.policyRef, 512, "policyRef");
+  assertByteLength(input.purpose, 256, "purpose");
+  assertByteLength(input.subjectId, 256, "subjectId");
+  assertByteLength(input.idempotencyKey, 256, "idempotencyKey");
   if (input.confidence < 0 || input.confidence > 1) {
     throw new MorrowError("VALIDATION_FAILED", "Confidence must be between 0 and 1.");
+  }
+}
+
+function assertByteLength(value: string, maximum: number, field: string): void {
+  if (Buffer.byteLength(value, "utf8") > maximum) {
+    throw new MorrowError("PAYLOAD_TOO_LARGE", `${field} exceeds the ${maximum}-byte limit.`);
   }
 }
 

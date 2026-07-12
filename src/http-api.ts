@@ -28,6 +28,7 @@ export interface HttpDispatchResponse {
 }
 
 const MAX_REQUEST_BODY_BYTES = 1_048_576;
+const MAX_RESPONSE_BODY_BYTES = 2_097_152;
 
 export function createMorrowApiServer(options: ApiServerOptions): Server {
   const server = createServer(async (request, response) => {
@@ -264,8 +265,21 @@ function readJsonText(text = ""): Record<string, unknown> {
 }
 
 function writeJson(response: ServerResponse, statusCode: number, body: unknown): void {
+  const serialized = JSON.stringify(body);
+  if (Buffer.byteLength(serialized, "utf8") > MAX_RESPONSE_BODY_BYTES) {
+    response.writeHead(413, { "content-type": "application/json; charset=utf-8" });
+    response.end(JSON.stringify({
+      error: {
+        code: "PAYLOAD_TOO_LARGE",
+        message: "Response exceeds the 2 MiB limit.",
+        details: [],
+        correlationId: "corr_response_limit"
+      }
+    }));
+    return;
+  }
   response.writeHead(statusCode, { "content-type": "application/json; charset=utf-8" });
-  response.end(JSON.stringify(body));
+  response.end(serialized);
 }
 
 function writeError(response: ServerResponse, error: unknown, correlationHeader: string | string[] | undefined): void {

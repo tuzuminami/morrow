@@ -307,6 +307,7 @@ components:
           type: string
         content:
           type: string
+          maxLength: 16384
         source:
           type: object
         confidence:

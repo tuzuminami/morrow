@@ -382,3 +382,23 @@ test("TEST-AUDIT-002 primary flow appends audit events for important state chang
   assert.ok(actions.includes("memory.revoke"));
   assert.ok(actions.includes("deletion-request.complete"));
 });
+
+test("TEST-INPUT-001 memory content larger than 16 KiB is rejected before persistence", () => {
+  const engine = createEngine();
+  configurePreferenceFlow(engine);
+
+  assert.throws(
+    () => engine.registerMemory(fullScopeContext, {
+      subjectId: "subject_1",
+      type: "preference",
+      purpose: "assistant_personalization",
+      policyRef: "default-policy",
+      content: "x".repeat(16_385),
+      source: { kind: "user_statement", reference: "message_oversized" },
+      confidence: 0.9,
+      classification: "sensitive",
+      idempotencyKey: "idem_oversized"
+    }),
+    (error: unknown) => error instanceof MorrowError && error.code === "PAYLOAD_TOO_LARGE"
+  );
+});
