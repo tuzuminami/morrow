@@ -94,7 +94,10 @@ async function dispatchMorrowHttpRequestUnsafe(
   if (request.method === "GET" && url.pathname === "/readyz") {
     const correlationId = request.headers["x-correlation-id"] ?? "corr_ready";
     try {
-      await readiness?.();
+      if (readiness === undefined) {
+        throw new Error("Readiness probe is not configured.");
+      }
+      await readiness();
       return json(200, { data: { status: "ready" }, meta: meta(correlationId) });
     } catch {
       return json(503, {

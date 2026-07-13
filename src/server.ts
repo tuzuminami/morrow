@@ -10,43 +10,66 @@ import { packageMigrationsDirectory } from "./migration-path.js";
 import { createPostgresMemoryRuntime } from "./storage/postgres-pool.js";
 import type { MorrowAuthenticator } from "./auth.js";
 
-const connectionString = requiredEnvironment("MORROW_DATABASE_URL");
-const authModule = requiredEnvironment("MORROW_AUTH_MODULE");
-const port = parsePort(process.env.PORT ?? "3000");
-const host = process.env.HOST ?? "127.0.0.1";
-if (!isLoopbackHost(host) && process.env.MORROW_TLS_TERMINATED !== "true") {
-  throw new Error("Non-loopback HOST requires MORROW_TLS_TERMINATED=true behind a trusted TLS terminator.");
-}
-const { pool, runtime } = createPostgresMemoryRuntime({ connectionString }, new RandomMemoryIds(), new RealtimeMemoryClock());
-const authenticator = await loadAuthenticator(authModule);
-await assertDatabaseReady(pool, packageMigrationsDirectory());
-const server = createMorrowApiServer({
-  runtime,
-  authenticator,
-  readiness: () => assertDatabaseReady(pool, packageMigrationsDirectory())
+void main().catch(() => {
+  console.error(JSON.stringify({ event: "morrow.api.start_failed", code: "CONFIGURATION_OR_DEPENDENCY_UNAVAILABLE" }));
+  process.exitCode = 1;
 });
 
-server.listen(port, host, () => {
-  console.log(JSON.stringify({ event: "morrow.api.started", host, port }));
-});
-
-let closing = false;
-for (const signal of ["SIGINT", "SIGTERM"] as const) {
-  process.once(signal, () => {
-    if (closing) {
-      return;
-    }
-    closing = true;
-    const timeout = setTimeout(() => {
-      console.error(JSON.stringify({ event: "morrow.api.shutdown_timeout" }));
-      void pool.end().finally(() => process.exit(1));
-    }, parseShutdownTimeout(process.env.MORROW_SHUTDOWN_TIMEOUT_MS ?? "30000"));
-    timeout.unref();
-    server.close(() => {
-      clearTimeout(timeout);
-      void pool.end().finally(() => process.exit(0));
-    });
+async function main(): Promise<void> {
+  const connectionString = requiredEnvironment("MORROW_DATABASE_URL");
+  const authModule = requiredEnvironment("MORROW_AUTH_MODULE");
+  const port = parsePort(process.env.PORT ?? "3000");
+  const host = process.env.HOST ?? "127.0.0.1";
+  const shutdownTimeout = parseShutdownTimeout(process.env.MORROW_SHUTDOWN_TIMEOUT_MS ?? "30000");
+  if (!isLoopbackHost(host) && process.env.MORROW_TLS_TERMINATED !== "true") {
+    throw new Error("Non-loopback HOST requires MORROW_TLS_TERMINATED=true behind a trusted TLS terminator.");
+  }
+  const { pool, runtime } = createPostgresMemoryRuntime({ connectionString }, new RandomMemoryIds(), new RealtimeMemoryClock());
+  const authenticator = await loadAuthenticator(authModule);
+  await assertDatabaseReady(pool, packageMigrationsDirectory());
+  const server = createMorrowApiServer({
+    runtime,
+    authenticator,
+    readiness: () => assertDatabaseReady(pool, packageMigrationsDirectory())
   });
+
+  server.once("error", () => {
+    console.error(JSON.stringify({ event: "morrow.api.listen_failed", code: "DEPENDENCY_UNAVAILABLE" }));
+    void pool.end().finally(() => process.exit(1));
+  });
+
+  server.listen(port, host, () => {
+    console.log(JSON.stringify({ event: "morrow.api.started", host, port }));
+  });
+
+  let closing = false;
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.once(signal, () => {
+      if (closing) {
+        return;
+      }
+      closing = true;
+      const timeout = setTimeout(() => {
+        console.error(JSON.stringify({ event: "morrow.api.shutdown_timeout" }));
+        process.exit(1);
+      }, shutdownTimeout);
+      timeout.unref();
+      server.close((error) => {
+        clearTimeout(timeout);
+        if (error !== undefined) {
+          console.error(JSON.stringify({ event: "morrow.api.shutdown_failed" }));
+          process.exit(1);
+        }
+        void pool.end().then(
+          () => process.exit(0),
+          () => {
+            console.error(JSON.stringify({ event: "morrow.postgres.shutdown_failed" }));
+            process.exit(1);
+          }
+        );
+      });
+    });
+  }
 }
 
 function requiredEnvironment(name: string): string {

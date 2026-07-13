@@ -19,11 +19,15 @@
   "files": [
     "CHANGELOG.md",
     "contracts",
+    "docs/operations",
+    "docs/runbooks",
     "dist/src",
     "migrations",
     "openapi",
     "README.md",
     "SECURITY.md",
+    "scripts/backup-postgres.sh",
+    "scripts/restore-postgres.sh",
     "LICENSE"
   ],
   "engines": {

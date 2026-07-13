@@ -164,6 +164,17 @@ test("TEST-API-003A readiness is public and fails closed when a dependency probe
   assert.equal(unavailableBody.error.correlationId, "corr_unavailable");
 });
 
+test("TEST-API-003B readiness fails closed when an embedding does not configure a probe", async () => {
+  const response = await dispatchMorrowHttpRequest(createRuntime(), undefined, {
+    method: "GET",
+    path: "/readyz",
+    headers: {}
+  });
+
+  assert.equal(response.statusCode, 503);
+  assert.equal((response.body as { readonly error: { readonly code: string } }).error.code, "DEPENDENCY_UNAVAILABLE");
+});
+
 test("TEST-API-004 malformed JSON fails with stable validation error", async () => {
   const response = await dispatchMorrowHttpRequest(createRuntime(), authenticated(), {
     method: "POST",
