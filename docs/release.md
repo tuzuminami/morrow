@@ -16,7 +16,8 @@ provenance and SBOM attestations for the package tarball. The untrusted build
 job has read-only repository access; a separate publication job receives only
 the generated evidence and holds the write permissions. The build checks out
 the immutable push-event SHA and fails if the remote tag is moved before
-publication.
+publication. The publication job repeats that check immediately before it
+attests or publishes assets.
 
 The workflow never mutates an existing published release. V1.0.0 predates this
 control and has no release evidence; a later corrective release is required to

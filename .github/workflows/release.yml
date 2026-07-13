@@ -11,6 +11,8 @@ permissions:
 jobs:
   build-evidence:
     runs-on: ubuntu-latest
+    outputs:
+      event-commit: ${{ steps.source.outputs.commit }}
     concurrency:
       group: morrow-release-${{ github.ref_name }}
       cancel-in-progress: false
@@ -30,6 +32,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - name: Verify immutable release source and main ancestry
+        id: source
         run: |
           git fetch origin main --depth=1
           event_commit="$(git rev-parse "${GITHUB_SHA}^{commit}")"
@@ -41,6 +44,7 @@ jobs:
           test -n "$remote_tag_commit"
           test "$remote_tag_commit" = "$event_commit"
           git merge-base --is-ancestor "$event_commit" origin/main
+          echo "commit=$event_commit" >> "$GITHUB_OUTPUT"
       - run: pnpm install --frozen-lockfile
       - run: pnpm run verify
       - run: pnpm run audit:prod
@@ -67,12 +71,22 @@ jobs:
       id-token: write
     env:
       RELEASE_TAG: ${{ github.ref_name }}
+      EVENT_COMMIT: ${{ needs.build-evidence.outputs.event-commit }}
     steps:
       - name: Retrieve verified release evidence
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           name: morrow-release-evidence-${{ github.ref_name }}
           path: artifacts
+      - name: Verify tag was not moved before attestation or publication
+        run: |
+          remote_tag_commit="$(git ls-remote --tags "https://github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${RELEASE_TAG}" "refs/tags/${RELEASE_TAG}^{}" | awk '
+            $2 ~ /\^\{\}$/ { peeled = $1 }
+            $2 !~ /\^\{\}$/ { direct = $1 }
+            END { print peeled != "" ? peeled : direct }
+          ')"
+          test -n "$remote_tag_commit"
+          test "$remote_tag_commit" = "$EVENT_COMMIT"
       - name: Attest package build provenance
         uses: actions/attest@f6bf1532d7d6793fce74eac584813a8eee607999 # v4.1.0
         with:
