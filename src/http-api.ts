@@ -13,7 +13,10 @@ import type { MemoryRuntime } from "./runtime/memory-runtime.js";
 export interface ApiServerOptions {
   readonly runtime: MemoryRuntime;
   readonly authenticator?: MorrowAuthenticator;
+  readonly readiness?: MorrowReadinessProbe;
 }
+
+export type MorrowReadinessProbe = () => Promise<void>;
 
 export interface HttpDispatchRequest {
   readonly method: string;
@@ -33,7 +36,7 @@ const MAX_RESPONSE_BODY_BYTES = 2_097_152;
 export function createMorrowApiServer(options: ApiServerOptions): Server {
   const server = createServer(async (request, response) => {
     try {
-      await routeRequest(options.runtime, options.authenticator, request, response);
+      await routeRequest(options.runtime, options.authenticator, options.readiness, request, response);
     } catch (error) {
       writeError(response, error, request.headers["x-correlation-id"]);
     }
@@ -46,6 +49,7 @@ export function createMorrowApiServer(options: ApiServerOptions): Server {
 async function routeRequest(
   runtime: MemoryRuntime,
   authenticator: MorrowAuthenticator | undefined,
+  readiness: MorrowReadinessProbe | undefined,
   request: IncomingMessage,
   response: ServerResponse
 ): Promise<void> {
@@ -54,20 +58,21 @@ async function routeRequest(
     path: request.url ?? "/",
     headers: normalizeHeaders(request.headers),
     bodyText: await readText(request)
-  });
+  }, readiness);
   writeJson(response, result.statusCode, result.body);
 }
 
 export async function dispatchMorrowHttpRequest(
   runtime: MemoryRuntime,
   authenticator: MorrowAuthenticator | undefined,
-  request: HttpDispatchRequest
+  request: HttpDispatchRequest,
+  readiness?: MorrowReadinessProbe
 ): Promise<HttpDispatchResponse> {
   try {
     if (Buffer.byteLength(request.bodyText ?? "", "utf8") > MAX_REQUEST_BODY_BYTES) {
       throw new MorrowError("PAYLOAD_TOO_LARGE", "Request body exceeds the 1 MiB limit.");
     }
-    return await dispatchMorrowHttpRequestUnsafe(runtime, authenticator, request);
+    return await dispatchMorrowHttpRequestUnsafe(runtime, authenticator, request, readiness);
   } catch (error) {
     return errorResponse(error, request.headers["x-correlation-id"]);
   }
@@ -76,13 +81,31 @@ export async function dispatchMorrowHttpRequest(
 async function dispatchMorrowHttpRequestUnsafe(
   runtime: MemoryRuntime,
   authenticator: MorrowAuthenticator | undefined,
-  request: HttpDispatchRequest
+  request: HttpDispatchRequest,
+  readiness: MorrowReadinessProbe | undefined
 ): Promise<HttpDispatchResponse> {
   const url = new URL(request.path, "http://localhost");
 
   if (request.method === "GET" && url.pathname === "/healthz") {
     const correlationId = request.headers["x-correlation-id"] ?? "corr_health";
     return json(200, { data: { status: "ok" }, meta: meta(correlationId) });
+  }
+
+  if (request.method === "GET" && url.pathname === "/readyz") {
+    const correlationId = request.headers["x-correlation-id"] ?? "corr_ready";
+    try {
+      await readiness?.();
+      return json(200, { data: { status: "ready" }, meta: meta(correlationId) });
+    } catch {
+      return json(503, {
+        error: {
+          code: "DEPENDENCY_UNAVAILABLE",
+          message: "Service is not ready.",
+          details: [],
+          correlationId
+        }
+      });
+    }
   }
 
   const context = await contextFromHeaders(authenticator, request.headers);

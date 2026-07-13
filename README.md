@@ -188,6 +188,15 @@ plain-HTTP bearer-token exposure is intentionally rejected.
 - Private operator material and private requirement documents are blocked by
   `.gitignore`, `.dockerignore`, `.npmignore`, and `scripts/check-private-boundary.mjs`.
 
+## Operations
+
+`GET /healthz` is a public process-liveness endpoint. `GET /readyz` is the
+public traffic-readiness endpoint and fails closed when PostgreSQL or the
+migration checksum ledger is unavailable. Production deployment, SLO/SLI,
+backup/restore, incident, and consent/deletion procedures live in
+[docs/operations/slo-sli.md](./docs/operations/slo-sli.md) and
+[docs/runbooks](./docs/runbooks).
+
 ## Boundaries
 
 - MORROW supplies the consent-aware memory decision and persistence boundary;

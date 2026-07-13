@@ -20,7 +20,11 @@ if (!isLoopbackHost(host) && process.env.MORROW_TLS_TERMINATED !== "true") {
 const { pool, runtime } = createPostgresMemoryRuntime({ connectionString }, new RandomMemoryIds(), new RealtimeMemoryClock());
 const authenticator = await loadAuthenticator(authModule);
 await assertDatabaseReady(pool, packageMigrationsDirectory());
-const server = createMorrowApiServer({ runtime, authenticator });
+const server = createMorrowApiServer({
+  runtime,
+  authenticator,
+  readiness: () => assertDatabaseReady(pool, packageMigrationsDirectory())
+});
 
 server.listen(port, host, () => {
   console.log(JSON.stringify({ event: "morrow.api.started", host, port }));
@@ -33,7 +37,13 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
       return;
     }
     closing = true;
+    const timeout = setTimeout(() => {
+      console.error(JSON.stringify({ event: "morrow.api.shutdown_timeout" }));
+      void pool.end().finally(() => process.exit(1));
+    }, parseShutdownTimeout(process.env.MORROW_SHUTDOWN_TIMEOUT_MS ?? "30000"));
+    timeout.unref();
     server.close(() => {
+      clearTimeout(timeout);
       void pool.end().finally(() => process.exit(0));
     });
   });
@@ -53,6 +63,14 @@ function parsePort(value: string): number {
     throw new Error("PORT must be a valid TCP port.");
   }
   return port;
+}
+
+function parseShutdownTimeout(value: string): number {
+  const timeout = Number.parseInt(value, 10);
+  if (!Number.isInteger(timeout) || timeout < 1_000 || timeout > 120_000) {
+    throw new Error("MORROW_SHUTDOWN_TIMEOUT_MS must be an integer between 1000 and 120000.");
+  }
+  return timeout;
 }
 
 function isLoopbackHost(host: string): boolean {

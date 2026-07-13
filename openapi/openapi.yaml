@@ -14,6 +14,30 @@ servers:
       host:
         default: morrow.local
 paths:
+  /healthz:
+    get:
+      operationId: health
+      summary: Return process liveness without checking dependencies.
+      responses:
+        "200":
+          description: Process is accepting HTTP requests.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /readyz:
+    get:
+      operationId: readiness
+      summary: Return readiness only when PostgreSQL and the migration ledger are usable.
+      responses:
+        "200":
+          description: PostgreSQL and migration ledger are ready for traffic.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+        "503":
+          $ref: "#/components/responses/Error"
   /v1/retention-rules:
     post:
       operationId: upsertRetentionRule

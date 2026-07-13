@@ -144,6 +144,26 @@ test("TEST-API-003 health check is public and does not require authenticator", a
   assert.equal(body.data.status, "ok");
 });
 
+test("TEST-API-003A readiness is public and fails closed when a dependency probe fails", async () => {
+  const ready = await dispatchMorrowHttpRequest(createRuntime(), undefined, {
+    method: "GET",
+    path: "/readyz",
+    headers: {}
+  }, async () => undefined);
+  const unavailable = await dispatchMorrowHttpRequest(createRuntime(), undefined, {
+    method: "GET",
+    path: "/readyz",
+    headers: { "x-correlation-id": "corr_unavailable" }
+  }, async () => { throw new Error("database connection details must not be exposed"); });
+  const unavailableBody = unavailable.body as { readonly error: { readonly code: string; readonly correlationId: string } };
+
+  assert.equal(ready.statusCode, 200);
+  assert.equal((ready.body as { readonly data: { readonly status: string } }).data.status, "ready");
+  assert.equal(unavailable.statusCode, 503);
+  assert.equal(unavailableBody.error.code, "DEPENDENCY_UNAVAILABLE");
+  assert.equal(unavailableBody.error.correlationId, "corr_unavailable");
+});
+
 test("TEST-API-004 malformed JSON fails with stable validation error", async () => {
   const response = await dispatchMorrowHttpRequest(createRuntime(), authenticated(), {
     method: "POST",

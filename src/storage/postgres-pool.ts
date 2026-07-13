@@ -24,7 +24,10 @@ export function createPostgresMemoryStore(
     idleTimeoutMillis: options.idleTimeoutMillis ?? 30_000
   });
   pool.on("error", (error) => {
-    console.error(JSON.stringify({ event: "morrow.postgres.idle_client_error", message: error.message }));
+    console.error(JSON.stringify({
+      event: "morrow.postgres.idle_client_error",
+      code: postgresErrorCode(error)
+    }));
   });
   return { pool, store: new PostgresMemoryStore(new PooledSqlTransactionProvider(pool), ids, clock) };
 }
@@ -41,7 +44,15 @@ export function createPostgresMemoryRuntime(
     idleTimeoutMillis: options.idleTimeoutMillis ?? 30_000
   });
   pool.on("error", (error) => {
-    console.error(JSON.stringify({ event: "morrow.postgres.idle_client_error", message: error.message }));
+    console.error(JSON.stringify({
+      event: "morrow.postgres.idle_client_error",
+      code: postgresErrorCode(error)
+    }));
   });
   return { pool, runtime: new PostgresMemoryRuntime(new PooledSqlTransactionProvider(pool), ids, clock) };
+}
+
+function postgresErrorCode(error: Error): string {
+  const code = (error as { readonly code?: unknown }).code;
+  return typeof code === "string" ? code : "unknown";
 }
