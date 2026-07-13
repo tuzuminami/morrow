@@ -1,0 +1,16 @@
+# Default ownership for the public MORROW repository.
+* @tuzuminami
+
+# Consent, tenant, retention, and database invariants.
+/src/ @tuzuminami
+/migrations/ @tuzuminami
+/contracts/ @tuzuminami
+/openapi/ @tuzuminami
+/tests/ @tuzuminami
+
+# Release and public-boundary controls.
+/.github/ @tuzuminami
+/scripts/ @tuzuminami
+/package.json @tuzuminami
+/pnpm-lock.yaml @tuzuminami
+/SECURITY.md @tuzuminami
