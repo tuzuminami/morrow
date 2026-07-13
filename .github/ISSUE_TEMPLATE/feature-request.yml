@@ -1,0 +1,24 @@
+name: Feature request
+description: Propose a bounded consent-aware memory capability.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and intended user
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed public contract
+      description: Include API, schema, migration, consent, retention, and package compatibility implications.
+    validations:
+      required: true
+  - type: checkboxes
+    id: review
+    attributes:
+      label: Required review context
+      options:
+        - label: Tenant, consent, deletion/export, audit, and redaction impacts are described.
+        - label: Migration, rollout, rollback, and operational impacts are described.
