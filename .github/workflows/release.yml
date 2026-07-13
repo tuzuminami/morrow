@@ -1,0 +1,64 @@
+name: Release evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing semver tag to release from green main, for example v1.0.1
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  attestations: write
+  id-token: write
+
+jobs:
+  release-evidence:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: morrow-release-${{ inputs.tag }}
+      cancel-in-progress: false
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+      - uses: pnpm/action-setup@a8198c4bff370c8506180b035930dea56dbd5288 # v5.0.0
+        with:
+          version: 10.30.2
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Verify a tag points to main
+        run: |
+          git fetch origin main --depth=1
+          git rev-parse --verify "${RELEASE_TAG}^{commit}"
+          git merge-base --is-ancestor "${RELEASE_TAG}^{commit}" origin/main
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run verify
+      - run: pnpm run audit:prod
+      - name: Build package and CycloneDX SBOM
+        run: |
+          mkdir artifacts
+          pnpm pack --pack-destination artifacts
+          pnpm run sbom
+          pnpm run check:release-evidence -- --tag "${RELEASE_TAG}" --artifacts artifacts
+      - name: Attest package provenance and SBOM
+        uses: actions/attest@f6bf1532d7d6793fce74eac584813a8eee607999 # v4.1.0
+        with:
+          subject-path: artifacts/*.tgz
+          sbom-path: artifacts/morrow.cdx.json
+      - name: Publish immutable release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "A release already exists for ${RELEASE_TAG}; refusing to replace release evidence." >&2
+            exit 1
+          fi
+          gh release create "${RELEASE_TAG}" artifacts/* --repo "${GITHUB_REPOSITORY}" --verify-tag --draft --generate-notes
+          gh release edit "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --draft=false

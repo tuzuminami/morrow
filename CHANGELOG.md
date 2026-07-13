@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- A guarded release-evidence workflow that creates CycloneDX SBOMs, package
+  checksums, and GitHub provenance/SBOM attestations before publishing a new
+  release.
+- Weekly Dependabot updates for npm dependencies and GitHub Actions, validated
+  by the repository `verify` gate.
+
 ## 1.0.0 - 2026-07-12
 
 ### Added
