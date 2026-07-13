@@ -1,5 +1,7 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -64,5 +66,32 @@ test("TEST-PACKAGE-001 package dry-run excludes private and out-of-scope runtime
     assert.equal(/(^|\/)(01_BMA|02_StRS|03_SyRS|04_AD|05_DD|06_API_CONTRACT|07_VV_PLAN|08_TRACEABILITY|09_MVP_BACKLOG|10_RELEASE_CRITERIA)\.md$/.test(file), false);
     assert.equal(file.includes("persona-contract"), false, `${file} exposes Persona Contract runtime code`);
     assert.equal(file.startsWith("dist/tests/"), false, `${file} exposes test artifacts in the package`);
+  }
+});
+
+test("TEST-RELEASE-001 release evidence requires a matching tag, CycloneDX SBOM, package tarball, and checksums", () => {
+  const artifacts = mkdtempSync(join(tmpdir(), "morrow-release-evidence-"));
+  try {
+    writeFileSync(join(artifacts, "tuzuminami-morrow-1.0.0.tgz"), "synthetic package artifact");
+    writeFileSync(join(artifacts, "morrow.cdx.json"), JSON.stringify({
+      bomFormat: "CycloneDX",
+      metadata: { component: { group: "@tuzuminami", name: "morrow", version: "1.0.0" } }
+    }));
+
+    const output = execFileSync("node", [
+      "scripts/check-release-evidence.mjs",
+      "--tag", "v1.0.0",
+      "--artifacts", artifacts
+    ], { encoding: "utf8" });
+
+    assert.match(output, /Release evidence check passed/);
+    assert.match(readFileSync(join(artifacts, "SHA256SUMS"), "utf8"), /morrow\.cdx\.json/);
+    assert.throws(() => execFileSync("node", [
+      "scripts/check-release-evidence.mjs",
+      "--tag", "v1.0.1",
+      "--artifacts", artifacts
+    ], { encoding: "utf8", stdio: "pipe" }));
+  } finally {
+    rmSync(artifacts, { force: true, recursive: true });
   }
 });

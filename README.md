@@ -77,7 +77,7 @@ MORROW V1.0.0 is a PostgreSQL-backed consent-aware memory runtime. It includes:
 - an explicit authenticator port; verified identity is the only source of
   tenant, actor, and scope authority
 - OpenAPI 3.1 contract, JSON Schema, Docker Compose, CI with PostgreSQL E2E,
-  and a repository private-boundary guard
+  a repository private-boundary guard, and release SBOM/provenance evidence
 
 ## Quick Start
 
@@ -202,3 +202,10 @@ plain-HTTP bearer-token exposure is intentionally rejected.
 ## License
 
 Apache-2.0
+
+## Release Evidence
+
+Each post-V1 release is built from a verified `main` tag and includes a
+CycloneDX SBOM, SHA-256 checksums, and GitHub artifact attestations. See
+[docs/release.md](./docs/release.md) for the release procedure and consumer
+verification commands.
