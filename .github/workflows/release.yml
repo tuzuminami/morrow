@@ -1,31 +1,27 @@
 name: Release evidence
 
 on:
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: Existing semver tag to release from green main, for example v1.0.1
-        required: true
-        type: string
+  push:
+    tags:
+      - "v*"
 
 permissions:
-  contents: write
-  attestations: write
-  id-token: write
+  contents: read
 
 jobs:
-  release-evidence:
+  build-evidence:
     runs-on: ubuntu-latest
     concurrency:
-      group: morrow-release-${{ inputs.tag }}
+      group: morrow-release-${{ github.ref_name }}
       cancel-in-progress: false
     env:
-      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
-          ref: ${{ inputs.tag }}
+          ref: ${{ github.ref }}
           fetch-depth: 0
+          persist-credentials: false
       - uses: pnpm/action-setup@a8198c4bff370c8506180b035930dea56dbd5288 # v5.0.0
         with:
           version: 10.30.2
@@ -47,18 +43,56 @@ jobs:
           pnpm pack --pack-destination artifacts
           pnpm run sbom
           pnpm run check:release-evidence -- --tag "${RELEASE_TAG}" --artifacts artifacts
-      - name: Attest package provenance and SBOM
+      - name: Transfer release evidence to the trusted publication job
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: morrow-release-evidence-${{ github.ref_name }}
+          path: artifacts
+          if-no-files-found: error
+          retention-days: 7
+
+  attest-and-publish:
+    needs: build-evidence
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - name: Retrieve verified release evidence
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: morrow-release-evidence-${{ github.ref_name }}
+          path: artifacts
+      - name: Attest package build provenance
+        uses: actions/attest@f6bf1532d7d6793fce74eac584813a8eee607999 # v4.1.0
+        with:
+          subject-path: artifacts/*.tgz
+      - name: Attest package SBOM
         uses: actions/attest@f6bf1532d7d6793fce74eac584813a8eee607999 # v4.1.0
         with:
           subject-path: artifacts/*.tgz
           sbom-path: artifacts/morrow.cdx.json
-      - name: Publish immutable release assets
+      - name: Publish release assets without replacement
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          expected_assets="$(find artifacts -maxdepth 1 -type f -exec basename {} \; | sort)"
           if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-            echo "A release already exists for ${RELEASE_TAG}; refusing to replace release evidence." >&2
+            release_state="$(gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --json isDraft,assets)"
+            draft="$(printf '%s' "$release_state" | jq -r '.isDraft')"
+            existing_assets="$(printf '%s' "$release_state" | jq -r '.assets[].name' | sort)"
+            if [[ "$draft" != "true" || -n "$existing_assets" ]]; then
+              echo "Release ${RELEASE_TAG} is already published or has assets; refusing to mix or replace evidence." >&2
+              exit 1
+            fi
+            gh release upload "${RELEASE_TAG}" artifacts/* --repo "${GITHUB_REPOSITORY}"
+          elif [[ -z "$expected_assets" ]]; then
+            echo "No release evidence assets were produced." >&2
             exit 1
+          else
+            gh release create "${RELEASE_TAG}" artifacts/* --repo "${GITHUB_REPOSITORY}" --verify-tag --draft --generate-notes
           fi
-          gh release create "${RELEASE_TAG}" artifacts/* --repo "${GITHUB_REPOSITORY}" --verify-tag --draft --generate-notes
           gh release edit "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --draft=false
