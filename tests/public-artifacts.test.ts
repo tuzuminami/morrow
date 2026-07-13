@@ -60,6 +60,10 @@ test("TEST-PACKAGE-001 package dry-run excludes private and out-of-scope runtime
   assert.ok(files.length > 0);
   assert.ok(files.includes("migrations/001_initial.sql"));
   assert.ok(files.includes("migrations/001_initial.down.sql"));
+  assert.ok(files.includes("docs/operations/slo-sli.md"));
+  assert.ok(files.includes("docs/runbooks/backup-restore.md"));
+  assert.ok(files.includes("scripts/backup-postgres.sh"));
+  assert.ok(files.includes("scripts/restore-postgres.sh"));
   for (const file of files) {
     assert.equal(privateMarkers.some((marker) => file.includes(marker)), false, `${file} contains a private marker`);
     assert.equal(/(^|\/)(README_PRIVATE|AGENTS_PRIVATE|CODEX_IMPLEMENTATION_HARNESS|CODEX_AI_COMPANION)/.test(file), false);
@@ -93,5 +97,25 @@ test("TEST-RELEASE-001 release evidence requires a matching tag, CycloneDX SBOM,
     ], { encoding: "utf8", stdio: "pipe" }));
   } finally {
     rmSync(artifacts, { force: true, recursive: true });
+  }
+});
+
+test("TEST-OPS-001 restore refuses to run without the matching checksum sidecar", () => {
+  const directory = mkdtempSync(join(tmpdir(), "morrow-restore-"));
+  const backup = join(directory, "morrow.dump");
+  try {
+    writeFileSync(backup, "synthetic backup");
+    assert.throws(() => execFileSync("bash", ["scripts/restore-postgres.sh"], {
+      encoding: "utf8",
+      stdio: "pipe",
+      env: {
+        ...process.env,
+        MORROW_DATABASE_URL: "postgresql://example.invalid/morrow",
+        MORROW_BACKUP_FILE: backup,
+        MORROW_RESTORE_CONFIRM: "restore-morrow"
+      }
+    }));
+  } finally {
+    rmSync(directory, { force: true, recursive: true });
   }
 });

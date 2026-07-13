@@ -43,7 +43,8 @@ export {
   dispatchMorrowHttpRequest,
   type ApiServerOptions,
   type HttpDispatchRequest,
-  type HttpDispatchResponse
+  type HttpDispatchResponse,
+  type MorrowReadinessProbe
 } from "./http-api.js";
 export {
   PooledSqlTransactionProvider,
