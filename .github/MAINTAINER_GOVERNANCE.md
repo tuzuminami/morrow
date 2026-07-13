@@ -14,7 +14,7 @@ Repository administrators configure `main` with these protections:
 2. Require the `verify` status check and require branches to be up to date.
 3. Require all review conversations to be resolved.
 4. Block force pushes and branch deletion, including for administrators.
-5. Require CODEOWNERS review for consent, migration, workflow, release, and public-boundary paths; record independent correctness and security review evidence before release.
+5. Use `CODEOWNERS` to assign ownership for consent, migration, workflow, release, and public-boundary paths. For this single-maintainer repository, record independent correctness and security review evidence before release instead of requiring an unavailable second approver.
 
 Verify the live setting with:
 
