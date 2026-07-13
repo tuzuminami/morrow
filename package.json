@@ -50,9 +50,9 @@
   },
   "devDependencies": {
     "@cyclonedx/cdxgen": "12.7.1",
-    "@types/node": "26.1.0",
+    "@types/node": "26.1.1",
     "@types/pg": "8.20.0",
-    "typescript": "5.9.2"
+    "typescript": "7.0.2"
   },
   "dependencies": {
     "pg": "8.22.0"
