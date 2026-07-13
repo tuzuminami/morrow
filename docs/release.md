@@ -14,12 +14,15 @@ The workflow publishes exactly these assets with the GitHub Release:
 Before release publication, GitHub Actions creates separate signed build
 provenance and SBOM attestations for the package tarball. The untrusted build
 job has read-only repository access; a separate publication job receives only
-the generated evidence and holds the write permissions.
+the generated evidence and holds the write permissions. The build checks out
+the immutable push-event SHA and fails if the remote tag is moved before
+publication.
 
 The workflow never mutates an existing published release. V1.0.0 predates this
 control and has no release evidence; a later corrective release is required to
-provide attested assets. A pre-existing empty draft can resume safely, but any
-draft or release with assets stops the workflow instead of mixing evidence.
+provide attested assets. A pre-existing empty draft can resume safely. A draft
+with the exact same verified assets can also resume; any other draft or release
+stops the workflow instead of mixing evidence.
 
 ## Maintainer Procedure
 
