@@ -39,6 +39,14 @@ test("TEST-CONTRACT-002 deletion request JSON schema is valid JSON and idempoten
   assert.ok(schema.required.includes("idempotencyKey"));
 });
 
+test("TEST-CONTRACT-003 OpenAPI documents opaque memory mutation and idempotency responses", () => {
+  const openApi = readFileSync("openapi/openapi.yaml", "utf8");
+
+  assert.match(openApi, /\/v1\/memories\/\{memoryId\}\/revoke:[\s\S]*?"404":[\s\S]*?"409":/);
+  assert.match(openApi, /\/v1\/deletion-requests:[\s\S]*?"404":[\s\S]*?"409":/);
+  assert.match(openApi, /Export up to 100 active, unexpired memories/);
+});
+
 test("TEST-MIGRATION-001 rollback migration is present for package consumers", () => {
   const rollback = readFileSync("migrations/001_initial.down.sql", "utf8");
 

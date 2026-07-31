@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { MorrowError } from "../errors.js";
-import { MAX_MEMORY_CONTENT_BYTES } from "../memory-engine.js";
+import { MAX_EXPORT_RESULTS, MAX_MEMORY_CONTENT_BYTES } from "../memory-engine.js";
 import { assertSubjectAccess, assertSubjectResourceAccess } from "../subject-authorization.js";
 import type {
   ConsentReceipt,
@@ -23,7 +23,6 @@ import type { SqlClient, SqlTransactionProvider } from "../storage/postgres-memo
 import type { MemoryRuntime } from "./memory-runtime.js";
 
 const MAX_QUERY_RESULTS = 100;
-const MAX_EXPORT_RESULTS = 100;
 
 interface MemoryRow {
   readonly id: string;
@@ -354,7 +353,7 @@ export class PostgresMemoryRuntime implements MemoryRuntime {
         [context.tenantId, subjectId, now.toISOString(), MAX_EXPORT_RESULTS + 1]
       );
       if (result.rows.length > MAX_EXPORT_RESULTS) {
-        throw new MorrowError("PAYLOAD_TOO_LARGE", "Subject export exceeds the V1 limit of 1000 memories.");
+        throw new MorrowError("PAYLOAD_TOO_LARGE", "Subject export exceeds the V1 limit of 100 memories.");
       }
       const records = result.rows.map(memoryFromRow).map(({ tenantId: _tenantId, ...record }) => record);
       await appendAudit(client, this.ids, this.clock, context, "memory.export", subjectId, `memory-export:${records.length}`);
@@ -532,7 +531,7 @@ function deletionRequestFromRow(row: DeletionRequestRow): DeletionRequest {
 
 function requireMemory(memory: MemoryRecord | undefined): MemoryRecord {
   if (memory === undefined) {
-    throw new MorrowError("TENANT_SCOPE_DENIED", "Request cannot access this resource.");
+    throw new MorrowError("RESOURCE_NOT_FOUND", "Resource was not found.");
   }
   return memory;
 }

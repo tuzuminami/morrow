@@ -337,6 +337,14 @@ test("TEST-API-013 HTTP binds subject operations to verified subject authority",
   });
   assert.equal(opaqueDenied.statusCode, 404);
   assert.equal((opaqueDenied.body as { readonly error: { readonly code: string } }).error.code, "RESOURCE_NOT_FOUND");
+  const missing = await dispatchMorrowHttpRequest(runtime, authenticated({ subjectId: "subject_other" }), {
+    method: "POST",
+    path: "/v1/memories/mem_absent/revoke",
+    headers: authorizedHeaders("idem-subject-auth-missing"),
+    bodyText: JSON.stringify({ reason: "blocked" })
+  });
+  assert.equal(missing.statusCode, opaqueDenied.statusCode);
+  assert.deepEqual(missing.body, opaqueDenied.body);
 
   const delegated = await dispatchMorrowHttpRequest(runtime, delegatedAuthenticator(["memory:read"]), {
     method: "POST",
