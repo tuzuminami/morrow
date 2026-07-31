@@ -222,6 +222,14 @@ async function contextFromHeaders(
     tenantId: principal.tenantId,
     actorId: principal.actorId,
     scopes: principal.scopes,
+    ...(principal.subjectId === undefined ? {} : { subjectId: principal.subjectId }),
+    ...(principal.subjectDelegations === undefined ? {} : {
+      subjectDelegations: principal.subjectDelegations.map((delegation) => ({
+        subjectId: delegation.subjectId,
+        scopes: [...delegation.scopes],
+        expiresAt: delegation.expiresAt
+      }))
+    }),
     correlationId: headers["x-correlation-id"] ?? `corr_${Date.now()}`
   };
 }
@@ -252,14 +260,30 @@ function validatePrincipal(principal: MorrowPrincipal): MorrowPrincipal {
     typeof principal.tenantId !== "string" || principal.tenantId.trim().length === 0 ||
     typeof principal.actorId !== "string" || principal.actorId.trim().length === 0 ||
     !Array.isArray(principal.scopes) ||
-    principal.scopes.some((scope) => typeof scope !== "string" || scope.trim().length === 0)
+    principal.scopes.some((scope) => typeof scope !== "string" || scope.trim().length === 0) ||
+    (principal.subjectId !== undefined && (typeof principal.subjectId !== "string" || principal.subjectId.trim().length === 0)) ||
+    (principal.subjectDelegations !== undefined && (!Array.isArray(principal.subjectDelegations) ||
+      principal.subjectDelegations.some((delegation) =>
+        typeof delegation.subjectId !== "string" || delegation.subjectId.trim().length === 0 ||
+        !Array.isArray(delegation.scopes) || delegation.scopes.length === 0 ||
+        delegation.scopes.some((scope: unknown) => typeof scope !== "string" || scope.trim().length === 0) ||
+        typeof delegation.expiresAt !== "string" || !Number.isFinite(Date.parse(delegation.expiresAt))
+      )))
   ) {
     throw new MorrowError("AUTHENTICATION_REQUIRED", "Authentication principal is invalid.");
   }
   return {
     tenantId: principal.tenantId,
     actorId: principal.actorId,
-    scopes: [...principal.scopes]
+    scopes: [...principal.scopes],
+    ...(principal.subjectId === undefined ? {} : { subjectId: principal.subjectId }),
+    ...(principal.subjectDelegations === undefined ? {} : {
+      subjectDelegations: principal.subjectDelegations.map((delegation) => ({
+        subjectId: delegation.subjectId,
+        scopes: [...delegation.scopes],
+        expiresAt: delegation.expiresAt
+      }))
+    })
   };
 }
 

@@ -54,6 +54,7 @@ jobs:
           pnpm pack --pack-destination artifacts
           pnpm run sbom
           pnpm run check:release-evidence -- --tag "${RELEASE_TAG}" --artifacts artifacts
+          node scripts/verify-release-consumer.mjs --tarball artifacts/*.tgz
       - name: Transfer release evidence to the trusted publication job
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MORROW API
-  version: 1.0.0
+  version: 1.0.1
   license:
     name: Apache-2.0
     identifier: Apache-2.0
@@ -246,6 +246,10 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
+      description: >-
+        The configured authenticator must supply tenant, actor, and scopes plus
+        a matching subject claim or an unexpired scope-limited subject delegation
+        for subject operations. MORROW does not expose delegation issuance.
   parameters:
     TenantId:
       name: X-Tenant-Id

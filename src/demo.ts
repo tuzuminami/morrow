@@ -4,6 +4,7 @@ const context: MemoryTenantContext = {
   tenantId: "demo_tenant",
   actorId: "demo_actor",
   scopes: ["consent:write", "retention:write", "memory:write", "memory:read", "memory:export"],
+  subjectId: "subject_demo",
   correlationId: "corr_demo"
 };
 

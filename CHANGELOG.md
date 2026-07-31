@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.1 - 2026-08-01
+
+### Security
+
+- Bind every consent and memory operation to the authenticated subject claim or an explicit,
+  scope-limited, unexpired subject delegation.
+- Enforce subject authorization inside the in-memory and PostgreSQL runtimes before idempotency
+  replay, with no delegation-issuance endpoint in the public API.
+- Add PostgreSQL idempotency subject evidence for new operations and fail closed for mismatched
+  subject access.
+
 ## Unreleased
 
 ### Added

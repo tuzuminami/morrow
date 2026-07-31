@@ -1,6 +1,6 @@
 {
   "name": "@tuzuminami/morrow",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Consent-aware, PostgreSQL-backed memory runtime for AI applications.",
   "type": "module",
   "license": "Apache-2.0",
@@ -42,7 +42,7 @@
     "demo": "pnpm run build && node dist/src/demo.js",
     "lint": "tsc -p tsconfig.json --noEmit",
     "audit:prod": "pnpm audit --prod --audit-level=high",
-    "sbom": "env -u NODE_PATH cdxgen -t js --required-only --fail-on-error -o artifacts/morrow.cdx.json .",
+    "sbom": "env -i PATH=\"$PATH\" HOME=\"$HOME\" cdxgen -t js --required-only --fail-on-error -o artifacts/morrow.cdx.json .",
     "start": "node dist/src/server.js",
     "test": "node --test dist/tests/*.test.js",
     "test:e2e": "test -n \"$MORROW_TEST_DATABASE_URL\" && pnpm run build && node --test dist/tests/postgres-http-e2e.test.js",

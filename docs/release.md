@@ -5,7 +5,9 @@ commit. The **Release evidence** workflow verifies the tag, runs the full
 repository gate, checks production dependency advisories, builds the package,
 and creates a CycloneDX SBOM.
 
-The workflow publishes exactly these assets with the GitHub Release:
+The workflow installs the exact package tarball into a clean consumer directory,
+type-checks its public declarations, checks its root import and public binaries, then publishes exactly these assets
+with the GitHub Release:
 
 - the npm package tarball;
 - `morrow.cdx.json`, the CycloneDX SBOM for that package; and
@@ -33,7 +35,10 @@ stops the workflow instead of mixing evidence.
 3. Push the tag. **Release evidence** starts from the tag event so its signed
    provenance is bound to the released source revision.
 4. Confirm the generated release contains the tarball, SBOM, and checksums.
-5. Verify the release artifact before announcing it:
+5. Download the tarball into a clean directory, run `npm install ./tuzuminami-morrow-1.0.1.tgz`,
+   and import `@tuzuminami/morrow` before announcing it. The release workflow
+   performs this same check before publication.
+6. Verify the release artifact before announcing it:
 
    ```bash
    gh release download v1.0.1 --repo tuzuminami/morrow --pattern '*.tgz'

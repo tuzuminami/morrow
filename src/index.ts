@@ -13,7 +13,8 @@ export {
 export { PostgresMemoryRuntime } from "./runtime/postgres-memory-runtime.js";
 export {
   type MorrowAuthenticator,
-  type MorrowPrincipal
+  type MorrowPrincipal,
+  type MorrowSubjectDelegation
 } from "./auth.js";
 export {
   InMemoryMemoryEngine,

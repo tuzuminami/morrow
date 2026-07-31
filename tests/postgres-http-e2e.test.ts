@@ -28,7 +28,7 @@ postgresTest("TEST-E2E-001 PostgreSQL HTTP flow enforces migration order and ten
   const tenantA = `tenant_e2e_a_${randomUUID()}`;
   const tenantB = `tenant_e2e_b_${randomUUID()}`;
   const subjectId = `subject_e2e_${randomUUID()}`;
-  const authenticator = authenticatorFor({ tenantA, tenantB });
+  const authenticator = authenticatorFor({ tenantA, tenantB }, subjectId);
   const server = createMorrowApiServer({ runtime, authenticator });
 
   try {
@@ -38,7 +38,8 @@ postgresTest("TEST-E2E-001 PostgreSQL HTTP flow enforces migration order and ten
     );
     assert.deepEqual(migrationRows.rows.map(({ filename }) => filename), [
       "001_initial.sql",
-      "002_postgres_runtime.sql"
+      "002_postgres_runtime.sql",
+      "003_subject_authorization.sql"
     ]);
 
     const baseUrl = await listen(server);
@@ -163,7 +164,10 @@ postgresTest("TEST-E2E-001 PostgreSQL HTTP flow enforces migration order and ten
   }
 });
 
-function authenticatorFor(tenants: { readonly tenantA: string; readonly tenantB: string }): MorrowAuthenticator {
+function authenticatorFor(
+  tenants: { readonly tenantA: string; readonly tenantB: string },
+  subjectId: string
+): MorrowAuthenticator {
   const scopes = [
     "retention:write",
     "consent:write",
@@ -176,7 +180,7 @@ function authenticatorFor(tenants: { readonly tenantA: string; readonly tenantB:
     async authenticate(authorization) {
       const token = authorization?.replace(/^Bearer /, "");
       const tenantId = token === "tenant-a" ? tenants.tenantA : token === "tenant-b" ? tenants.tenantB : undefined;
-      return tenantId === undefined ? undefined : { tenantId, actorId: `${tenantId}-actor`, scopes };
+      return tenantId === undefined ? undefined : { tenantId, actorId: `${tenantId}-actor`, scopes, subjectId };
     }
   };
 }

@@ -61,7 +61,7 @@ and adapter-ready architecture come before UI or provider integrations.
 
 ## Status
 
-MORROW V1.0.0 is a PostgreSQL-backed consent-aware memory runtime. It includes:
+MORROW v1.0.1 is a PostgreSQL-backed consent-aware memory runtime. It includes:
 
 - typed memory registration for `episodic`, `fact`, `preference`,
   `relationship`, and `instruction`
@@ -75,7 +75,7 @@ MORROW V1.0.0 is a PostgreSQL-backed consent-aware memory runtime. It includes:
   idempotency and audit writes
 - migration runner with a checksum ledger and startup readiness check
 - an explicit authenticator port; verified identity is the only source of
-  tenant, actor, and scope authority
+  tenant, actor, scope, and subject authority
 - OpenAPI 3.1 contract, JSON Schema, Docker Compose, CI with PostgreSQL E2E,
   a repository private-boundary guard, and release SBOM/provenance evidence
 
@@ -113,6 +113,11 @@ V1 creates a fresh database only: an existing pre-ledger schema is rejected
 rather than being silently stamped as compatible. Export or archive that data,
 then initialize a fresh V1 database before migration.
 
+Migration `003_subject_authorization.sql` records the subject alongside each
+idempotency key. Idempotency records created before that migration do not carry
+enough subject evidence to be replayed, so MORROW fails closed and clients must
+issue a new idempotency key for a retry after the migration.
+
 ## Public API Direction
 
 The OpenAPI 3.1 contract lives in `openapi/openapi.yaml` and covers:
@@ -136,8 +141,10 @@ constraints allow it.
 
 To run the server, provide an external ES module that exports a verified
 `authenticator`. The module must map an `Authorization` value to a trusted
-tenant ID, actor ID, and scopes; MORROW deliberately does not ship a fake
-header-to-identity adapter.
+tenant ID, actor ID, scopes, and either a subject claim or a time-limited
+subject delegation. Subject operations fail closed when the requested subject
+does not match that verified authority; MORROW deliberately does not ship a
+fake header-to-identity adapter or delegation-issuance API.
 
 ```js
 // ./local-auth.mjs -- development example only; do not commit real credentials.
@@ -147,7 +154,8 @@ export const authenticator = {
     return {
       tenantId: "tenant_local",
       actorId: "developer_local",
-      scopes: ["retention:write", "consent:write", "memory:write", "memory:read", "memory:delete", "memory:export"]
+      scopes: ["retention:write", "consent:write", "memory:write", "memory:read", "memory:delete", "memory:export"],
+      subjectId: "subject_local"
     };
   }
 };
@@ -173,6 +181,10 @@ plain-HTTP bearer-token exposure is intentionally rejected.
   protected operation.
 - Wrong-tenant retrieval and subject export return no cross-tenant data.
 - Wrong-tenant mutation is denied.
+- Subject operations require a matching principal subject claim or an unexpired,
+  scope-limited subject delegation.
+- Unauthorized memory-ID mutations return the same generic not-found response as
+  an absent memory, preventing cross-subject existence probes.
 - Expired retention removes memories from retrieval and export.
 - Repeated idempotency keys do not duplicate side effects.
 - Conflicting idempotency-key reuse fails closed.
@@ -214,7 +226,19 @@ Apache-2.0
 
 ## Release Evidence
 
-Each post-V1 release is built from a verified `main` tag and includes a
-CycloneDX SBOM, SHA-256 checksums, and GitHub artifact attestations. See
-[docs/release.md](./docs/release.md) for the release procedure and consumer
-verification commands.
+`v1.0.0` remains immutable, but it predates distributable release assets.
+Use the supported corrective release `v1.0.1` or later. Each post-V1 release is
+built from a verified `main` tag and includes a CycloneDX SBOM, SHA-256
+checksums, and GitHub artifact attestations. Download and verify a release
+without an npm registry account:
+
+```bash
+mkdir morrow-release && cd morrow-release
+gh release download v1.0.1 --repo tuzuminami/morrow --pattern '*.tgz'
+npm install ./tuzuminami-morrow-1.0.1.tgz
+node --input-type=module --eval 'import("@tuzuminami/morrow")'
+gh attestation verify tuzuminami-morrow-1.0.1.tgz --repo tuzuminami/morrow
+```
+
+See [docs/release.md](./docs/release.md) for the release procedure and full
+consumer verification commands.

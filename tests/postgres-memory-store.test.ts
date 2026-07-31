@@ -15,6 +15,7 @@ const context: MemoryTenantContext = {
   tenantId: "tenant_sql",
   actorId: "actor_sql",
   scopes: ["memory:write", "memory:read"],
+  subjectId: "subject_sql",
   correlationId: "corr_sql"
 };
 
@@ -45,7 +46,7 @@ test("TEST-STORAGE-001 PostgreSQL insert uses transaction and writes memory plus
   assert.match(tx.queries[2]?.sql ?? "", /INSERT INTO idempotency_keys/);
   assert.match(tx.queries[3]?.sql ?? "", /INSERT INTO audit_events/);
   assert.equal(tx.queries[1]?.values[1], "tenant_sql");
-  assert.equal(tx.queries[2]?.values[4], memoryWriteRequestHash(input));
+  assert.equal(tx.queries[2]?.values[5], memoryWriteRequestHash(input));
 });
 
 test("TEST-STORAGE-002 PostgreSQL query includes tenant predicate and scope fields", async () => {
@@ -88,7 +89,7 @@ test("TEST-STORAGE-003 PostgreSQL insert returns existing memory for matching id
     idempotencyKey: "idem_sql"
   };
   const tx = new ScriptedTransactionProvider([
-    { rows: [{ resource_id: "mem_existing", request_hash: memoryWriteRequestHash(input) }] },
+    { rows: [{ resource_id: "mem_existing", request_hash: memoryWriteRequestHash(input), subject_id: input.subjectId }] },
     { rows: [memoryRow("mem_existing", input)] }
   ]);
   const store = new PostgresMemoryStore(
@@ -118,7 +119,7 @@ test("TEST-STORAGE-004 PostgreSQL insert rejects conflicting idempotency key", a
     idempotencyKey: "idem_sql"
   };
   const tx = new ScriptedTransactionProvider([
-    { rows: [{ resource_id: "mem_existing", request_hash: "different" }] }
+    { rows: [{ resource_id: "mem_existing", request_hash: "different", subject_id: input.subjectId }] }
   ]);
   const store = new PostgresMemoryStore(
     tx,
@@ -133,7 +134,35 @@ test("TEST-STORAGE-004 PostgreSQL insert rejects conflicting idempotency key", a
   assert.equal(tx.queries.length, 1);
 });
 
-test("TEST-STORAGE-005 pooled transaction provider commits and releases clients", async () => {
+test("TEST-STORAGE-005 idempotency keys for a different subject fail closed without a database constraint error", async () => {
+  const input = {
+    subjectId: "subject_sql",
+    type: "preference" as const,
+    purpose: "assistant_personalization",
+    policyRef: "default-policy",
+    content: "Prefers SQL-backed storage.",
+    source: { kind: "user_statement" as const, reference: "message_sql" },
+    confidence: 0.9,
+    classification: "sensitive" as const,
+    idempotencyKey: "idem_sql"
+  };
+  const tx = new ScriptedTransactionProvider([
+    { rows: [{ resource_id: "mem_other_subject", request_hash: memoryWriteRequestHash(input), subject_id: "subject_other" }] }
+  ]);
+  const store = new PostgresMemoryStore(
+    tx,
+    { nextId: (prefix) => `${prefix}_1` },
+    { now: () => new Date("2026-07-05T00:00:00.000Z") }
+  );
+
+  await assert.rejects(
+    store.insertMemoryWithAudit(context, input, new Date("2026-08-05T00:00:00.000Z")),
+    /Idempotency key conflicts/
+  );
+  assert.equal(tx.queries.length, 1);
+});
+
+test("TEST-STORAGE-006 pooled transaction provider commits and releases clients", async () => {
   const pool = new FakePool();
   const tx = new PooledSqlTransactionProvider(pool);
 
@@ -147,7 +176,7 @@ test("TEST-STORAGE-005 pooled transaction provider commits and releases clients"
   assert.equal(pool.client.released, true);
 });
 
-test("TEST-STORAGE-006 pooled transaction provider rolls back and releases on failure", async () => {
+test("TEST-STORAGE-007 pooled transaction provider rolls back and releases on failure", async () => {
   const pool = new FakePool();
   const tx = new PooledSqlTransactionProvider(pool);
 
