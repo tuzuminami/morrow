@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.2 - 2026-08-01
+
+- Make cross-subject memory mutation responses indistinguishable from missing resources.
+- Align the documented and enforced subject export limit at 100 records.
+- Add PostgreSQL E2E coverage for subject authority, delegated access expiry, idempotency isolation, and legacy idempotency rows.
+
 ## 1.0.1 - 2026-08-01
 
 ### Security

@@ -215,7 +215,7 @@ test("TEST-TENANT-001 wrong tenant cannot retrieve or revoke memory", () => {
   );
   assert.throws(
     () => engine.revokeMemory(otherTenantContext, { memoryId: memory.id, reason: "user-request", idempotencyKey: "del_1" }),
-    (error: unknown) => error instanceof MorrowError && error.code === "TENANT_SCOPE_DENIED"
+    (error: unknown) => error instanceof MorrowError && error.code === "RESOURCE_NOT_FOUND"
   );
 });
 
@@ -401,6 +401,30 @@ test("TEST-EXPORT-001 subject export excludes other tenants", () => {
 
   assert.equal(exported.length, 1);
   assert.equal(exported[0]?.content, "Tenant B memory.");
+});
+
+test("TEST-EXPORT-002 subject export rejects the 101st active memory", () => {
+  const engine = createEngine();
+  configurePreferenceFlow(engine);
+
+  for (let index = 0; index < 101; index += 1) {
+    engine.registerMemory(fullScopeContext, {
+      subjectId: "subject_1",
+      type: "preference",
+      purpose: "assistant_personalization",
+      policyRef: "default-policy",
+      content: `Export limit memory ${index}.`,
+      source: { kind: "user_statement", reference: `export-limit-${index}` },
+      confidence: 0.9,
+      classification: "sensitive",
+      idempotencyKey: `idem-export-limit-${index}`
+    });
+  }
+
+  assert.throws(
+    () => engine.exportSubject(fullScopeContext, "subject_1"),
+    (error: unknown) => error instanceof MorrowError && error.code === "PAYLOAD_TOO_LARGE"
+  );
 });
 
 test("TEST-AUDIT-002 primary flow appends audit events for important state changes", () => {

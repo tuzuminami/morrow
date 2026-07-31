@@ -35,15 +35,15 @@ stops the workflow instead of mixing evidence.
 3. Push the tag. **Release evidence** starts from the tag event so its signed
    provenance is bound to the released source revision.
 4. Confirm the generated release contains the tarball, SBOM, and checksums.
-5. Download the tarball into a clean directory, run `npm install ./tuzuminami-morrow-1.0.1.tgz`,
+5. Download the tarball into a clean directory, run `npm install ./tuzuminami-morrow-1.0.2.tgz`,
    and import `@tuzuminami/morrow` before announcing it. The release workflow
    performs this same check before publication.
 6. Verify the release artifact before announcing it:
 
    ```bash
-   gh release download v1.0.1 --repo tuzuminami/morrow --pattern '*.tgz'
-   gh attestation verify tuzuminami-morrow-1.0.1.tgz --repo tuzuminami/morrow
-   gh attestation verify tuzuminami-morrow-1.0.1.tgz \
+   gh release download v1.0.2 --repo tuzuminami/morrow --pattern '*.tgz'
+   gh attestation verify tuzuminami-morrow-1.0.2.tgz --repo tuzuminami/morrow
+   gh attestation verify tuzuminami-morrow-1.0.2.tgz \
      --repo tuzuminami/morrow \
      --predicate-type https://cyclonedx.org/bom
    ```

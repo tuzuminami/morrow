@@ -8,6 +8,7 @@ export type MemoryStatus = "active" | "revoked" | "expired" | "deleted";
 export type DataClassification = "public" | "internal" | "sensitive";
 export type DeletionMode = "soft_delete" | "hard_delete";
 export const MAX_MEMORY_CONTENT_BYTES = 16_384;
+export const MAX_EXPORT_RESULTS = 100;
 
 export interface MemoryTenantContext {
   readonly tenantId: string;
@@ -387,6 +388,9 @@ export class InMemoryMemoryEngine {
         parseDate(memory.retentionExpiresAt, "retentionExpiresAt") > now
       );
     });
+    if (records.length > MAX_EXPORT_RESULTS) {
+      throw new MorrowError("PAYLOAD_TOO_LARGE", "Subject export exceeds the V1 limit of 100 memories.");
+    }
     this.appendAudit(context, "memory.export", subjectId, `memory-export:${records.length}`);
     return records.map(({ tenantId: _tenantId, ...record }) => record);
   }
@@ -418,7 +422,7 @@ export class InMemoryMemoryEngine {
   private requireMemoryForTenant(context: MemoryTenantContext, memoryId: string): MemoryRecord {
     const memory = this.memories.get(memoryId);
     if (memory === undefined || memory.tenantId !== context.tenantId) {
-      throw new MorrowError("TENANT_SCOPE_DENIED", "Request cannot access this resource.");
+      throw new MorrowError("RESOURCE_NOT_FOUND", "Resource was not found.");
     }
     return memory;
   }

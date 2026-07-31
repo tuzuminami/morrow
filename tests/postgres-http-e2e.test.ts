@@ -28,7 +28,8 @@ postgresTest("TEST-E2E-001 PostgreSQL HTTP flow enforces migration order and ten
   const tenantA = `tenant_e2e_a_${randomUUID()}`;
   const tenantB = `tenant_e2e_b_${randomUUID()}`;
   const subjectId = `subject_e2e_${randomUUID()}`;
-  const authenticator = authenticatorFor({ tenantA, tenantB }, subjectId);
+  const otherSubjectId = `subject_e2e_other_${randomUUID()}`;
+  const authenticator = authenticatorFor({ tenantA, tenantB }, subjectId, otherSubjectId);
   const server = createMorrowApiServer({ runtime, authenticator });
 
   try {
@@ -81,6 +82,69 @@ postgresTest("TEST-E2E-001 PostgreSQL HTTP flow enforces migration order and ten
     });
     assert.equal(query.status, 200);
     assert.equal(bodyData<{ readonly memories: readonly unknown[] }>(query).memories.length, 1);
+
+    const otherSubjectQuery = await requestAs(baseUrl, "POST", "/v1/memories/query", "tenant-a-other", {
+      subjectId,
+      type: "preference",
+      purpose: "assistant_personalization",
+      policyRef: "default-policy"
+    });
+    assert.equal(otherSubjectQuery.status, 403);
+    assert.equal(errorCode(otherSubjectQuery), "TENANT_SCOPE_DENIED");
+
+    const delegatedQuery = await requestAs(baseUrl, "POST", "/v1/memories/query", "tenant-a-delegated", {
+      subjectId,
+      type: "preference",
+      purpose: "assistant_personalization",
+      policyRef: "default-policy"
+    });
+    assert.equal(delegatedQuery.status, 200);
+    assert.equal(bodyData<{ readonly memories: readonly unknown[] }>(delegatedQuery).memories.length, 1);
+
+    const expiredDelegationQuery = await requestAs(baseUrl, "POST", "/v1/memories/query", "tenant-a-expired", {
+      subjectId,
+      type: "preference",
+      purpose: "assistant_personalization",
+      policyRef: "default-policy"
+    });
+    assert.equal(expiredDelegationQuery.status, 403);
+    assert.equal(errorCode(expiredDelegationQuery), "TENANT_SCOPE_DENIED");
+
+    const existingOtherSubjectRevoke = await requestAs(
+      baseUrl,
+      "POST",
+      `/v1/memories/${memoryId}/revoke`,
+      "tenant-a-other",
+      { reason: "blocked" },
+      "other-subject-revoke"
+    );
+    const absentOtherSubjectRevoke = await requestAs(
+      baseUrl,
+      "POST",
+      "/v1/memories/mem_absent/revoke",
+      "tenant-a-other",
+      { reason: "blocked" },
+      "absent-subject-revoke"
+    );
+    assert.equal(existingOtherSubjectRevoke.status, 404);
+    assert.equal(absentOtherSubjectRevoke.status, existingOtherSubjectRevoke.status);
+    assert.equal(errorCode(absentOtherSubjectRevoke), errorCode(existingOtherSubjectRevoke));
+
+    const mismatchedSubjectReplay = await requestAs(baseUrl, "POST", "/v1/memories", "tenant-a-other", {
+      ...memoryPayload,
+      subjectId: otherSubjectId
+    }, "memory-e2e");
+    assert.equal(mismatchedSubjectReplay.status, 403);
+    assert.equal(errorCode(mismatchedSubjectReplay), "TENANT_SCOPE_DENIED");
+
+    await pool.query(
+      `INSERT INTO idempotency_keys (tenant_id, actor_id, idempotency_key, subject_id, operation, request_hash, resource_id, created_at)
+       VALUES ($1, $2, $3, NULL, $4, $5, $6, NOW())`,
+      [tenantA, `${tenantA}-actor`, "legacy-subject-evidence", "memory.write", "legacy-hash", memoryId]
+    );
+    const legacyReplay = await request(baseUrl, "POST", "/v1/memories", tenantA, memoryPayload, "legacy-subject-evidence");
+    assert.equal(legacyReplay.status, 409);
+    assert.equal(errorCode(legacyReplay), "VERSION_CONFLICT");
 
     const exportBeforeDeletion = await request(baseUrl, "GET", `/v1/subjects/${subjectId}/export`, tenantA);
     assert.equal(exportBeforeDeletion.status, 200);
@@ -166,7 +230,8 @@ postgresTest("TEST-E2E-001 PostgreSQL HTTP flow enforces migration order and ten
 
 function authenticatorFor(
   tenants: { readonly tenantA: string; readonly tenantB: string },
-  subjectId: string
+  subjectId: string,
+  otherSubjectId: string
 ): MorrowAuthenticator {
   const scopes = [
     "retention:write",
@@ -179,8 +244,28 @@ function authenticatorFor(
   return {
     async authenticate(authorization) {
       const token = authorization?.replace(/^Bearer /, "");
-      const tenantId = token === "tenant-a" ? tenants.tenantA : token === "tenant-b" ? tenants.tenantB : undefined;
-      return tenantId === undefined ? undefined : { tenantId, actorId: `${tenantId}-actor`, scopes, subjectId };
+      if (token === "tenant-a") {
+        return { tenantId: tenants.tenantA, actorId: `${tenants.tenantA}-actor`, scopes, subjectId };
+      }
+      if (token === "tenant-a-other") {
+        return { tenantId: tenants.tenantA, actorId: `${tenants.tenantA}-actor`, scopes, subjectId: otherSubjectId };
+      }
+      if (token === "tenant-a-delegated" || token === "tenant-a-expired") {
+        return {
+          tenantId: tenants.tenantA,
+          actorId: `${tenants.tenantA}-delegate`,
+          scopes: ["memory:read"],
+          subjectDelegations: [{
+            subjectId,
+            scopes: ["memory:read"],
+            expiresAt: token === "tenant-a-delegated" ? "2099-01-01T00:00:00.000Z" : "2000-01-01T00:00:00.000Z"
+          }]
+        };
+      }
+      if (token === "tenant-b") {
+        return { tenantId: tenants.tenantB, actorId: `${tenants.tenantB}-actor`, scopes, subjectId };
+      }
+      return undefined;
     }
   };
 }
@@ -194,6 +279,17 @@ async function request(
   idempotencyKey?: string
 ): Promise<{ readonly status: number; readonly body: unknown }> {
   const token = tenantId.includes("_a_") ? "tenant-a" : "tenant-b";
+  return requestAs(baseUrl, method, path, token, body, idempotencyKey);
+}
+
+async function requestAs(
+  baseUrl: string,
+  method: "GET" | "POST",
+  path: string,
+  token: string,
+  body?: Record<string, unknown>,
+  idempotencyKey?: string
+): Promise<{ readonly status: number; readonly body: unknown }> {
   const response = await fetch(`${baseUrl}${path}`, {
     method,
     headers: {
@@ -204,6 +300,10 @@ async function request(
     ...(body === undefined ? {} : { body: JSON.stringify(body) })
   });
   return { status: response.status, body: await response.json() as unknown };
+}
+
+function errorCode(response: { readonly body: unknown }): string | undefined {
+  return (response.body as { readonly error?: { readonly code?: string } }).error?.code;
 }
 
 function bodyData<T extends object>(response: { readonly body: unknown }): T {

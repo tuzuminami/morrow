@@ -61,7 +61,7 @@ and adapter-ready architecture come before UI or provider integrations.
 
 ## Status
 
-MORROW v1.0.1 is a PostgreSQL-backed consent-aware memory runtime. It includes:
+MORROW v1.0.2 is a PostgreSQL-backed consent-aware memory runtime. It includes:
 
 - typed memory registration for `episodic`, `fact`, `preference`,
   `relationship`, and `instruction`
@@ -227,17 +227,17 @@ Apache-2.0
 ## Release Evidence
 
 `v1.0.0` remains immutable, but it predates distributable release assets.
-Use the supported corrective release `v1.0.1` or later. Each post-V1 release is
+Use the supported corrective release `v1.0.2` or later. Each post-V1 release is
 built from a verified `main` tag and includes a CycloneDX SBOM, SHA-256
 checksums, and GitHub artifact attestations. Download and verify a release
 without an npm registry account:
 
 ```bash
 mkdir morrow-release && cd morrow-release
-gh release download v1.0.1 --repo tuzuminami/morrow --pattern '*.tgz'
-npm install ./tuzuminami-morrow-1.0.1.tgz
+gh release download v1.0.2 --repo tuzuminami/morrow --pattern '*.tgz'
+npm install ./tuzuminami-morrow-1.0.2.tgz
 node --input-type=module --eval 'import("@tuzuminami/morrow")'
-gh attestation verify tuzuminami-morrow-1.0.1.tgz --repo tuzuminami/morrow
+gh attestation verify tuzuminami-morrow-1.0.2.tgz --repo tuzuminami/morrow
 ```
 
 See [docs/release.md](./docs/release.md) for the release procedure and full

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MORROW API
-  version: 1.0.1
+  version: 1.0.2
   license:
     name: Apache-2.0
     identifier: Apache-2.0
@@ -185,6 +185,10 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
   /v1/deletion-requests:
     post:
       operationId: createDeletionRequest
@@ -214,10 +218,14 @@ paths:
           $ref: "#/components/responses/Error"
         "422":
           $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
   /v1/subjects/{subjectId}/export:
     get:
       operationId: exportSubjectMemories
-      summary: Export up to 1000 active, unexpired memories for a subject within the authenticated tenant.
+      summary: Export up to 100 active, unexpired memories for a subject within the authenticated tenant.
       security:
         - bearerAuth: []
       parameters:
