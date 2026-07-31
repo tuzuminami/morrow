@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { MorrowError } from "../errors.js";
+import { assertSubjectAccess } from "../subject-authorization.js";
 import type {
   MemoryAuditEvent,
   MemoryRecord,
@@ -62,11 +63,12 @@ export class PostgresMemoryStore {
   ) {}
 
   async insertMemoryWithAudit(context: MemoryTenantContext, input: RegisterMemoryInput, retentionExpiresAt: Date): Promise<MemoryRecord> {
+    assertSubjectAccess(context, input.subjectId, "memory:write", this.clock.now());
     return this.tx.transaction(async (client) => {
       const now = this.clock.now().toISOString();
       const requestHash = memoryWriteRequestHash(input);
       const existingIdempotency = await client.query<IdempotencyRow>(
-        `SELECT resource_id, request_hash
+        `SELECT resource_id, request_hash, subject_id
         FROM idempotency_keys
         WHERE tenant_id = $1
           AND actor_id = $2
@@ -75,7 +77,7 @@ export class PostgresMemoryStore {
       );
       const existing = existingIdempotency.rows[0];
       if (existing !== undefined) {
-        if (existing.request_hash !== requestHash) {
+        if (existing.subject_id === null || existing.subject_id !== input.subjectId || existing.request_hash !== requestHash) {
           throw new MorrowError("VERSION_CONFLICT", "Idempotency key conflicts with a previous request.");
         }
         const memory = await this.selectMemoryById(client, context, existing.resource_id);
@@ -139,12 +141,13 @@ export class PostgresMemoryStore {
 
       await client.query(
         `INSERT INTO idempotency_keys (
-          tenant_id, actor_id, idempotency_key, operation, request_hash, resource_id, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          tenant_id, actor_id, idempotency_key, subject_id, operation, request_hash, resource_id, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [
           context.tenantId,
           context.actorId,
           input.idempotencyKey,
+          input.subjectId,
           "memory.write",
           requestHash,
           memory.id,
@@ -176,6 +179,7 @@ export class PostgresMemoryStore {
     policyRef: string,
     now: Date
   ): Promise<readonly MemoryRecord[]> {
+    assertSubjectAccess(context, subjectId, "memory:read", now);
     const result = await this.tx.transaction((client) =>
       client.query<MemoryRow>(
         `SELECT
@@ -256,6 +260,7 @@ export class ScriptedTransactionProvider implements SqlTransactionProvider {
 interface IdempotencyRow {
   readonly resource_id: string;
   readonly request_hash: string;
+  readonly subject_id: string | null;
 }
 
 interface MemoryRow {

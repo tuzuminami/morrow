@@ -5,6 +5,11 @@ import { tmpdir } from "node:os";
 import test from "node:test";
 import assert from "node:assert/strict";
 
+const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
+  readonly name: string;
+  readonly version: string;
+};
+
 const privateMarkers = [
   ["PRIVATE", "CONTROL", "DOCUMENT"].join(" "),
   ["PRIVATE", "OPERATOR", "MATERIAL"].join("_"),
@@ -76,15 +81,15 @@ test("TEST-PACKAGE-001 package dry-run excludes private and out-of-scope runtime
 test("TEST-RELEASE-001 release evidence requires a matching tag, CycloneDX SBOM, package tarball, and checksums", () => {
   const artifacts = mkdtempSync(join(tmpdir(), "morrow-release-evidence-"));
   try {
-    writeFileSync(join(artifacts, "tuzuminami-morrow-1.0.0.tgz"), "synthetic package artifact");
+    writeFileSync(join(artifacts, `tuzuminami-morrow-${packageJson.version}.tgz`), "synthetic package artifact");
     writeFileSync(join(artifacts, "morrow.cdx.json"), JSON.stringify({
       bomFormat: "CycloneDX",
-      metadata: { component: { group: "@tuzuminami", name: "morrow", version: "1.0.0" } }
+      metadata: { component: { group: "@tuzuminami", name: "morrow", version: packageJson.version } }
     }));
 
     const output = execFileSync("node", [
       "scripts/check-release-evidence.mjs",
-      "--tag", "v1.0.0",
+      "--tag", `v${packageJson.version}`,
       "--artifacts", artifacts
     ], { encoding: "utf8" });
 
@@ -92,7 +97,7 @@ test("TEST-RELEASE-001 release evidence requires a matching tag, CycloneDX SBOM,
     assert.match(readFileSync(join(artifacts, "SHA256SUMS"), "utf8"), /morrow\.cdx\.json/);
     assert.throws(() => execFileSync("node", [
       "scripts/check-release-evidence.mjs",
-      "--tag", "v1.0.1",
+      "--tag", "v0.0.0",
       "--artifacts", artifacts
     ], { encoding: "utf8", stdio: "pipe" }));
   } finally {

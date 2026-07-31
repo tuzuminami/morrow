@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
+import type { MorrowSubjectDelegation } from "./auth.js";
 import { MorrowError } from "./errors.js";
+import { assertSubjectAccess, assertSubjectResourceAccess } from "./subject-authorization.js";
 
 export type MemoryType = "episodic" | "fact" | "preference" | "relationship" | "instruction";
 export type MemoryStatus = "active" | "revoked" | "expired" | "deleted";
@@ -11,6 +13,8 @@ export interface MemoryTenantContext {
   readonly tenantId: string;
   readonly actorId: string;
   readonly scopes: readonly string[];
+  readonly subjectId?: string;
+  readonly subjectDelegations?: readonly MorrowSubjectDelegation[];
   readonly correlationId: string;
 }
 
@@ -171,6 +175,7 @@ export class InMemoryMemoryEngine {
   registerConsent(context: MemoryTenantContext, input: RegisterConsentInput): ConsentReceipt {
     requireScope(context, "consent:write");
     assertNonEmpty(input.subjectId, "subjectId");
+    assertSubjectAccess(context, input.subjectId, "consent:write", this.clock.now());
     assertNonEmpty(input.purpose, "purpose");
     if (input.scope.length === 0) {
       throw new MorrowError("VALIDATION_FAILED", "Consent scope must contain at least one memory type.");
@@ -198,6 +203,7 @@ export class InMemoryMemoryEngine {
   registerMemory(context: MemoryTenantContext, input: RegisterMemoryInput): MemoryRecord {
     requireScope(context, "memory:write");
     validateMemoryInput(input);
+    assertSubjectAccess(context, input.subjectId, "memory:write", this.clock.now());
     const key = idempotencyKey(context, input.idempotencyKey);
     const fingerprint = idempotencyFingerprint("memory.write", {
       subjectId: input.subjectId,
@@ -258,6 +264,7 @@ export class InMemoryMemoryEngine {
   queryMemories(context: MemoryTenantContext, input: QueryMemoryInput): readonly MemoryRecord[] {
     requireScope(context, "memory:read");
     assertNonEmpty(input.subjectId, "subjectId");
+    assertSubjectAccess(context, input.subjectId, "memory:read", input.now ?? this.clock.now());
     assertNonEmpty(input.purpose, "purpose");
     assertNonEmpty(input.policyRef, "policyRef");
     const now = input.now ?? this.clock.now();
@@ -291,6 +298,8 @@ export class InMemoryMemoryEngine {
     assertNonEmpty(input.memoryId, "memoryId");
     assertNonEmpty(input.reason, "reason");
     assertNonEmpty(input.idempotencyKey, "idempotencyKey");
+    const memory = this.requireMemoryForTenant(context, input.memoryId);
+    assertSubjectResourceAccess(context, memory.subjectId, "memory:delete", this.clock.now());
     const key = idempotencyKey(context, input.idempotencyKey);
     const fingerprint = idempotencyFingerprint("memory.revoke", {
       memoryId: input.memoryId,
@@ -304,7 +313,6 @@ export class InMemoryMemoryEngine {
       }
     }
 
-    const memory = this.requireMemoryForTenant(context, input.memoryId);
     if (memory.status !== "active") {
       return memory;
     }
@@ -329,6 +337,8 @@ export class InMemoryMemoryEngine {
     assertNonEmpty(input.memoryId, "memoryId");
     assertNonEmpty(input.reason, "reason");
     assertNonEmpty(input.idempotencyKey, "idempotencyKey");
+    const memory = this.requireMemoryForTenant(context, input.memoryId);
+    assertSubjectResourceAccess(context, memory.subjectId, "memory:delete", this.clock.now());
     const key = idempotencyKey(context, input.idempotencyKey);
     const fingerprint = idempotencyFingerprint("deletion-request.create", {
       memoryId: input.memoryId,
@@ -342,7 +352,7 @@ export class InMemoryMemoryEngine {
       }
     }
 
-    const memory = this.revokeMemory(context, {
+    const revokedMemory = this.revokeMemory(context, {
       memoryId: input.memoryId,
       reason: input.reason,
       idempotencyKey: `${input.idempotencyKey}:revoke`
@@ -351,7 +361,7 @@ export class InMemoryMemoryEngine {
     const request: DeletionRequest = {
       id: this.ids.nextId("del"),
       tenantId: context.tenantId,
-      memoryId: memory.id,
+      memoryId: revokedMemory.id,
       reason: input.reason,
       status: "completed",
       createdAt: now,
@@ -360,13 +370,14 @@ export class InMemoryMemoryEngine {
     };
     this.deletionRequests.set(request.id, request);
     this.recordIdempotency(key, fingerprint, request.id);
-    this.appendAudit(context, "deletion-request.complete", request.id, input.reason, memory.contentHash, undefined);
+    this.appendAudit(context, "deletion-request.complete", request.id, input.reason, revokedMemory.contentHash, undefined);
     return request;
   }
 
   exportSubject(context: MemoryTenantContext, subjectId: string): readonly Omit<MemoryRecord, "tenantId">[] {
     requireScope(context, "memory:export");
     assertNonEmpty(subjectId, "subjectId");
+    assertSubjectAccess(context, subjectId, "memory:export", this.clock.now());
     const now = this.clock.now();
     const records = [...this.memories.values()].filter((memory) => {
       return (

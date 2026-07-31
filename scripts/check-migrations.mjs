@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 const up = readFileSync("migrations/001_initial.sql", "utf8");
 const down = readFileSync("migrations/001_initial.down.sql", "utf8");
 const runtime = readFileSync("migrations/002_postgres_runtime.sql", "utf8");
+const subjectAuthorization = readFileSync("migrations/003_subject_authorization.sql", "utf8");
 
 const requiredTables = [
   "consent_receipts",
@@ -45,6 +46,14 @@ for (const index of [
   if (!new RegExp(`CREATE INDEX IF NOT EXISTS ${index}\\b`, "i").test(runtime)) {
     failures.push(`missing V1 runtime index ${index}`);
   }
+}
+
+if (!/ADD COLUMN IF NOT EXISTS subject_id TEXT/i.test(subjectAuthorization)) {
+  failures.push("subject authorization migration must add idempotency subject evidence");
+}
+
+if (!/idempotency_keys_subject_auth_v1_idx/i.test(subjectAuthorization)) {
+  failures.push("subject authorization migration must index idempotency subject evidence");
 }
 
 if (failures.length > 0) {

@@ -289,6 +289,82 @@ test("TEST-API-012 HTTP rejects oversized request bodies before authentication",
   assert.equal(response.statusCode, 413);
 });
 
+test("TEST-API-013 HTTP binds subject operations to verified subject authority", async () => {
+  const runtime = createRuntime();
+  await post(runtime, "/v1/retention-rules", {
+    memoryType: "preference",
+    purpose: "assistant_personalization",
+    ttlDays: 30,
+    deletionMode: "soft_delete"
+  });
+  await post(runtime, "/v1/consent-receipts", {
+    subjectId: "subject_api",
+    purpose: "assistant_personalization",
+    scope: ["preference"],
+    expiresAt: "2099-01-01T00:00:00.000Z"
+  });
+
+  const denied = await dispatchMorrowHttpRequest(runtime, authenticated({ subjectId: "subject_other" }), {
+    method: "POST",
+    path: "/v1/memories/query",
+    headers: authorizedHeaders(),
+    bodyText: JSON.stringify({
+      subjectId: "subject_api",
+      type: "preference",
+      purpose: "assistant_personalization",
+      policyRef: "default-policy"
+    })
+  });
+  assert.equal(denied.statusCode, 403);
+  assert.equal((denied.body as { readonly error: { readonly code: string } }).error.code, "TENANT_SCOPE_DENIED");
+
+  const created = await post(runtime, "/v1/memories", {
+    subjectId: "subject_api",
+    type: "preference",
+    purpose: "assistant_personalization",
+    policyRef: "default-policy",
+    content: "Memory ID must not be enumerable.",
+    source: { kind: "user_statement", reference: "subject-auth-test" },
+    confidence: 0.9,
+    classification: "sensitive"
+  }, "idem-subject-auth-memory");
+  const createdBody = created.body as { readonly data: { readonly id: string } };
+  const opaqueDenied = await dispatchMorrowHttpRequest(runtime, authenticated({ subjectId: "subject_other" }), {
+    method: "POST",
+    path: `/v1/memories/${createdBody.data.id}/revoke`,
+    headers: authorizedHeaders("idem-subject-auth-revoke"),
+    bodyText: JSON.stringify({ reason: "blocked" })
+  });
+  assert.equal(opaqueDenied.statusCode, 404);
+  assert.equal((opaqueDenied.body as { readonly error: { readonly code: string } }).error.code, "RESOURCE_NOT_FOUND");
+
+  const delegated = await dispatchMorrowHttpRequest(runtime, delegatedAuthenticator(["memory:read"]), {
+    method: "POST",
+    path: "/v1/memories/query",
+    headers: authorizedHeaders(),
+    bodyText: JSON.stringify({
+      subjectId: "subject_api",
+      type: "preference",
+      purpose: "assistant_personalization",
+      policyRef: "default-policy"
+    })
+  });
+  assert.equal(delegated.statusCode, 200);
+
+  const delegationDenied = await dispatchMorrowHttpRequest(runtime, delegatedAuthenticator(["memory:read"]), {
+    method: "POST",
+    path: "/v1/consent-receipts",
+    headers: authorizedHeaders(),
+    bodyText: JSON.stringify({
+      subjectId: "subject_api",
+      purpose: "assistant_personalization",
+      scope: ["preference"],
+      expiresAt: "2099-01-01T00:00:00.000Z"
+    })
+  });
+  assert.equal(delegationDenied.statusCode, 403);
+});
+
 async function post(
   runtime: MemoryRuntime,
   path: string,
@@ -314,16 +390,37 @@ function authorizedHeaders(idempotencyKey = "idem-test"): Record<string, string>
   };
 }
 
-function authenticated(overrides: Partial<{ readonly scopes: readonly string[] }> = {}): MorrowAuthenticator {
+function authenticated(overrides: Partial<{ readonly scopes: readonly string[]; readonly subjectId: string }> = {}): MorrowAuthenticator {
   return {
-    async authenticate(authorization): Promise<{ readonly tenantId: string; readonly actorId: string; readonly scopes: readonly string[] } | undefined> {
+    async authenticate(authorization): Promise<{ readonly tenantId: string; readonly actorId: string; readonly scopes: readonly string[]; readonly subjectId: string } | undefined> {
       if (authorization !== "Bearer actor_api") {
         return undefined;
       }
       return {
         tenantId: "tenant_api",
         actorId: "actor_api",
-        scopes: overrides.scopes ?? scopes.split(" ")
+        scopes: overrides.scopes ?? scopes.split(" "),
+        subjectId: overrides.subjectId ?? "subject_api"
+      };
+    }
+  };
+}
+
+function delegatedAuthenticator(subjectScopes: readonly string[]): MorrowAuthenticator {
+  return {
+    async authenticate(authorization) {
+      if (authorization !== "Bearer actor_api") {
+        return undefined;
+      }
+      return {
+        tenantId: "tenant_api",
+        actorId: "actor_delegate",
+        scopes: scopes.split(" "),
+        subjectDelegations: [{
+          subjectId: "subject_api",
+          scopes: subjectScopes,
+          expiresAt: "2099-01-01T00:00:00.000Z"
+        }]
       };
     }
   };

@@ -38,6 +38,7 @@ const fullScopeContext: MemoryTenantContext = {
   tenantId: "tenant_a",
   actorId: "actor_admin",
   scopes: ["consent:write", "retention:write", "memory:write", "memory:read", "memory:delete", "memory:export"],
+  subjectId: "subject_1",
   correlationId: "corr_memory"
 };
 
@@ -96,6 +97,63 @@ test("AT-MORROW-001 stores and retrieves typed memory only with consent, tenant,
   assert.equal(results.length, 1);
   assert.equal(results[0]?.id, memory.id);
   assert.equal(results[0]?.contentHash.length, 64);
+});
+
+test("AT-SUBJECT-001 subject operations fail closed without a matching claim or an active delegation", () => {
+  const engine = createEngine();
+  configurePreferenceFlow(engine);
+  const memory = engine.registerMemory(fullScopeContext, {
+    subjectId: "subject_1",
+    type: "preference",
+    purpose: "assistant_personalization",
+    policyRef: "default-policy",
+    content: "Subject-bound memory.",
+    source: { kind: "user_statement", reference: "message_subject" },
+    confidence: 0.9,
+    classification: "sensitive",
+    idempotencyKey: "idem-subject"
+  });
+  const otherSubject = { ...fullScopeContext, actorId: "actor_other", subjectId: "subject_other" };
+
+  assert.throws(() => engine.registerConsent(otherSubject, {
+    subjectId: "subject_1", purpose: "assistant_personalization", scope: ["preference"], expiresAt: "2026-08-05T00:00:00.000Z"
+  }), (error: unknown) => error instanceof MorrowError && error.code === "TENANT_SCOPE_DENIED");
+  assert.throws(() => engine.registerMemory(otherSubject, {
+    subjectId: "subject_1", type: "preference", purpose: "assistant_personalization", policyRef: "default-policy",
+    content: "Blocked.", source: { kind: "user_statement", reference: "message_blocked" }, confidence: 0.9,
+    classification: "sensitive", idempotencyKey: "idem-blocked"
+  }), (error: unknown) => error instanceof MorrowError && error.code === "TENANT_SCOPE_DENIED");
+  assert.throws(() => engine.queryMemories(otherSubject, {
+    subjectId: "subject_1", type: "preference", purpose: "assistant_personalization", policyRef: "default-policy"
+  }), (error: unknown) => error instanceof MorrowError && error.code === "TENANT_SCOPE_DENIED");
+  assert.throws(() => engine.revokeMemory(otherSubject, {
+    memoryId: memory.id, reason: "blocked", idempotencyKey: "idem-blocked-revoke"
+  }), (error: unknown) => error instanceof MorrowError && error.code === "RESOURCE_NOT_FOUND");
+  assert.throws(() => engine.exportSubject(otherSubject, "subject_1"),
+    (error: unknown) => error instanceof MorrowError && error.code === "TENANT_SCOPE_DENIED");
+});
+
+test("AT-SUBJECT-002 an unexpired explicit delegation authorizes only its scoped subject operation", () => {
+  const engine = createEngine();
+  configurePreferenceFlow(engine);
+  const { subjectId: _subjectId, ...delegationBase } = fullScopeContext;
+  const delegated = {
+    ...delegationBase,
+    actorId: "actor_delegate",
+    subjectDelegations: [{
+      subjectId: "subject_1",
+      scopes: ["memory:read", "memory:export"],
+      expiresAt: "2026-08-05T00:00:00.000Z"
+    }]
+  };
+
+  assert.deepEqual(engine.queryMemories(delegated, {
+    subjectId: "subject_1", type: "preference", purpose: "assistant_personalization", policyRef: "default-policy"
+  }), []);
+  assert.deepEqual(engine.exportSubject(delegated, "subject_1"), []);
+  assert.throws(() => engine.registerConsent(delegated, {
+    subjectId: "subject_1", purpose: "assistant_personalization", scope: ["preference"], expiresAt: "2026-08-05T00:00:00.000Z"
+  }), (error: unknown) => error instanceof MorrowError && error.code === "TENANT_SCOPE_DENIED");
 });
 
 test("AT-MORROW-002 missing consent fails closed before persistence", () => {

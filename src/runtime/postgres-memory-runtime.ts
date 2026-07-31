@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { MorrowError } from "../errors.js";
 import { MAX_MEMORY_CONTENT_BYTES } from "../memory-engine.js";
+import { assertSubjectAccess, assertSubjectResourceAccess } from "../subject-authorization.js";
 import type {
   ConsentReceipt,
   DeletionRequest,
@@ -70,6 +71,7 @@ interface IdempotencyRow {
   readonly operation: string;
   readonly request_hash: string;
   readonly resource_id: string;
+  readonly subject_id: string | null;
 }
 
 export class PostgresMemoryRuntime implements MemoryRuntime {
@@ -105,6 +107,7 @@ export class PostgresMemoryRuntime implements MemoryRuntime {
   async registerConsent(context: MemoryTenantContext, input: RegisterConsentInput): Promise<ConsentReceipt> {
     requireScope(context, "consent:write");
     assertNonEmpty(input.subjectId, "subjectId");
+    assertSubjectAccess(context, input.subjectId, "consent:write", this.clock.now());
     assertNonEmpty(input.purpose, "purpose");
     if (input.scope.length === 0 || input.scope.some((type) => !isMemoryType(type))) {
       throw new MorrowError("VALIDATION_FAILED", "Consent scope must contain supported memory types.");
@@ -138,6 +141,7 @@ export class PostgresMemoryRuntime implements MemoryRuntime {
     requireScope(context, "memory:write");
     validateMemoryInput(input);
     const now = this.clock.now();
+    assertSubjectAccess(context, input.subjectId, "memory:write", now);
     const requestHash = fingerprint("memory.write", {
       subjectId: input.subjectId, type: input.type, purpose: input.purpose, policyRef: input.policyRef,
       content: input.content, source: input.source, confidence: input.confidence, classification: input.classification
@@ -145,6 +149,7 @@ export class PostgresMemoryRuntime implements MemoryRuntime {
     return this.tx.transaction(async (client) => {
       const existingIdempotency = await lookupIdempotency(client, context, input.idempotencyKey);
       if (existingIdempotency !== undefined) {
+        assertStoredIdempotencySubject(context, existingIdempotency, input.subjectId, "memory:write", now);
         assertMatchingIdempotency(existingIdempotency, "memory.write", requestHash);
         return requireMemory(await selectMemory(client, context, existingIdempotency.resource_id));
       }
@@ -169,9 +174,9 @@ export class PostgresMemoryRuntime implements MemoryRuntime {
         throw new MorrowError("CONFIGURATION_INVALID", "Retention rule is required before memory persistence.");
       }
       const id = this.ids.nextId("mem");
-      const inserted = await reserveIdempotency(client, context, input.idempotencyKey, "memory.write", requestHash, id, now);
+      const inserted = await reserveIdempotency(client, context, input.idempotencyKey, input.subjectId, "memory.write", requestHash, id, now);
       if (!inserted) {
-        const existing = await resolveIdempotency(client, context, input.idempotencyKey, "memory.write", requestHash);
+        const existing = await resolveIdempotency(client, context, input.idempotencyKey, input.subjectId, "memory:write", "memory.write", requestHash, now);
         return requireMemory(await selectMemory(client, context, existing.resource_id));
       }
       const retentionExpiresAt = addDays(now, Number(ttlDays)).toISOString();
@@ -206,6 +211,7 @@ export class PostgresMemoryRuntime implements MemoryRuntime {
     assertNonEmpty(input.purpose, "purpose");
     assertNonEmpty(input.policyRef, "policyRef");
     const now = input.now ?? this.clock.now();
+    assertSubjectAccess(context, input.subjectId, "memory:read", now);
     return this.tx.transaction(async (client) => {
       const result = await client.query<MemoryRow>(
         `SELECT id, tenant_id, subject_id, type, purpose, policy_ref, content, content_hash, source,
@@ -239,10 +245,17 @@ export class PostgresMemoryRuntime implements MemoryRuntime {
     const now = this.clock.now();
     const requestHash = fingerprint("memory.revoke", { memoryId: input.memoryId, reason: input.reason });
     return this.tx.transaction(async (client) => {
+      const existingIdempotency = await lookupIdempotency(client, context, input.idempotencyKey);
+      if (existingIdempotency !== undefined) {
+        authorizeStoredIdempotencySubject(context, existingIdempotency, "memory:delete", now);
+        assertMatchingIdempotency(existingIdempotency, "memory.revoke", requestHash);
+        return requireMemory(await selectMemory(client, context, existingIdempotency.resource_id));
+      }
       const current = requireMemory(await selectMemory(client, context, input.memoryId, true));
-      const inserted = await reserveIdempotency(client, context, input.idempotencyKey, "memory.revoke", requestHash, current.id, now);
+      assertSubjectResourceAccess(context, current.subjectId, "memory:delete", now);
+      const inserted = await reserveIdempotency(client, context, input.idempotencyKey, current.subjectId, "memory.revoke", requestHash, current.id, now);
       if (!inserted) {
-        const existing = await resolveIdempotency(client, context, input.idempotencyKey, "memory.revoke", requestHash);
+        const existing = await resolveIdempotency(client, context, input.idempotencyKey, current.subjectId, "memory:delete", "memory.revoke", requestHash, now);
         return requireMemory(await selectMemory(client, context, existing.resource_id));
       }
       if (current.status !== "active") {
@@ -271,14 +284,16 @@ export class PostgresMemoryRuntime implements MemoryRuntime {
     return this.tx.transaction(async (client) => {
       const existingIdempotency = await lookupIdempotency(client, context, input.idempotencyKey);
       if (existingIdempotency !== undefined) {
+        authorizeStoredIdempotencySubject(context, existingIdempotency, "memory:delete", now);
         assertMatchingIdempotency(existingIdempotency, "deletion-request.create", requestHash);
         return requireDeletionRequest(await selectDeletionRequest(client, context, existingIdempotency.resource_id));
       }
       const current = requireMemory(await selectMemory(client, context, input.memoryId, true));
+      assertSubjectResourceAccess(context, current.subjectId, "memory:delete", now);
       const id = this.ids.nextId("del");
-      const inserted = await reserveIdempotency(client, context, input.idempotencyKey, "deletion-request.create", requestHash, id, now);
+      const inserted = await reserveIdempotency(client, context, input.idempotencyKey, current.subjectId, "deletion-request.create", requestHash, id, now);
       if (!inserted) {
-        const existing = await resolveIdempotency(client, context, input.idempotencyKey, "deletion-request.create", requestHash);
+        const existing = await resolveIdempotency(client, context, input.idempotencyKey, current.subjectId, "memory:delete", "deletion-request.create", requestHash, now);
         return requireDeletionRequest(await selectDeletionRequest(client, context, existing.resource_id));
       }
       const retention = await client.query<{ readonly deletion_mode: "soft_delete" | "hard_delete" }>(
@@ -327,6 +342,7 @@ export class PostgresMemoryRuntime implements MemoryRuntime {
     requireScope(context, "memory:export");
     assertNonEmpty(subjectId, "subjectId");
     const now = this.clock.now();
+    assertSubjectAccess(context, subjectId, "memory:export", now);
     return this.tx.transaction(async (client) => {
       const result = await client.query<MemoryRow>(
         `SELECT id, tenant_id, subject_id, type, purpose, policy_ref, content, content_hash, source,
@@ -351,17 +367,18 @@ async function reserveIdempotency(
   client: SqlClient,
   context: MemoryTenantContext,
   key: string,
+  subjectId: string,
   operation: string,
   requestHash: string,
   resourceId: string,
   now: Date
 ): Promise<boolean> {
   const result = await client.query<{ readonly resource_id: string }>(
-    `INSERT INTO idempotency_keys (tenant_id, actor_id, idempotency_key, operation, request_hash, resource_id, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO idempotency_keys (tenant_id, actor_id, idempotency_key, subject_id, operation, request_hash, resource_id, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      ON CONFLICT (tenant_id, actor_id, idempotency_key) DO NOTHING
      RETURNING resource_id`,
-    [context.tenantId, context.actorId, key, operation, requestHash, resourceId, now.toISOString()]
+    [context.tenantId, context.actorId, key, subjectId, operation, requestHash, resourceId, now.toISOString()]
   );
   return result.rows[0] !== undefined;
 }
@@ -370,13 +387,17 @@ async function resolveIdempotency(
   client: SqlClient,
   context: MemoryTenantContext,
   key: string,
+  subjectId: string,
+  scope: string,
   operation: string,
-  requestHash: string
+  requestHash: string,
+  now: Date
 ): Promise<IdempotencyRow> {
   const existing = await lookupIdempotency(client, context, key);
   if (existing === undefined) {
     throw new MorrowError("VERSION_CONFLICT", "Idempotency key conflicts with a previous request.");
   }
+  assertStoredIdempotencySubject(context, existing, subjectId, scope, now);
   assertMatchingIdempotency(existing, operation, requestHash);
   return existing;
 }
@@ -387,11 +408,41 @@ async function lookupIdempotency(
   key: string
 ): Promise<IdempotencyRow | undefined> {
   const result = await client.query<IdempotencyRow>(
-    `SELECT operation, request_hash, resource_id FROM idempotency_keys
+    `SELECT operation, request_hash, resource_id, subject_id FROM idempotency_keys
      WHERE tenant_id = $1 AND actor_id = $2 AND idempotency_key = $3`,
     [context.tenantId, context.actorId, key]
   );
   return result.rows[0];
+}
+
+function authorizeStoredIdempotencySubject(
+  context: MemoryTenantContext,
+  existing: IdempotencyRow,
+  scope: string,
+  now: Date
+): string {
+  if (existing.subject_id === null) {
+    throw new MorrowError("VERSION_CONFLICT", "Idempotency key conflicts with a previous request.");
+  }
+  if (scope === "memory:delete") {
+    assertSubjectResourceAccess(context, existing.subject_id, scope, now);
+  } else {
+    assertSubjectAccess(context, existing.subject_id, scope, now);
+  }
+  return existing.subject_id;
+}
+
+function assertStoredIdempotencySubject(
+  context: MemoryTenantContext,
+  existing: IdempotencyRow,
+  expectedSubjectId: string,
+  scope: string,
+  now: Date
+): void {
+  const storedSubjectId = authorizeStoredIdempotencySubject(context, existing, scope, now);
+  if (storedSubjectId !== expectedSubjectId) {
+    throw new MorrowError("VERSION_CONFLICT", "Idempotency key conflicts with a previous request.");
+  }
 }
 
 function assertMatchingIdempotency(existing: IdempotencyRow, operation: string, requestHash: string): void {
