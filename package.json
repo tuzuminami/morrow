@@ -49,7 +49,7 @@
     "verify": "pnpm run check:private-boundary && pnpm run check:migrations && pnpm run build && pnpm test && pnpm pack --dry-run --json"
   },
   "devDependencies": {
-    "@cyclonedx/cdxgen": "12.7.1",
+    "@cyclonedx/cdxgen": "12.8.6",
     "@types/node": "26.1.0",
     "@types/pg": "8.20.0",
     "typescript": "5.9.2"
